@@ -323,12 +323,31 @@ export const getMeetingAccess = (auction, currentUser) => {
   );
 
   const winnerName = (winner.bidder || '').toLowerCase().trim();
+  const currentUserName = (currentUser.name || '').toLowerCase().trim();
+  const currentUserEmail = (currentUser.email || '').toLowerCase().trim();
+  const currentUserUsername = (currentUser.username || '').toLowerCase().trim();
+  const winnerTokens = winnerName.split(/[\s._-]+/).filter(Boolean);
+  const userTokens = currentUserName.split(/[\s._-]+/).filter(Boolean);
+  const tokenMatch = winnerTokens.some((t) => t.length > 2 && userTokens.includes(t));
+
   const isWinningBuyer = Boolean(
     !isSeller && (
       (winner.bidderId && currentUser.id === winner.bidderId) ||
-      (winnerName && currentUser.name && currentUser.name.toLowerCase().trim() === winnerName) ||
-      (winnerName && currentUser.name && winnerName.includes(currentUser.name.split(' ')[0].toLowerCase())) ||
-      winnerName === 'you'
+      (winnerName && currentUserName && (
+        currentUserName === winnerName ||
+        winnerName.includes(currentUserName) ||
+        currentUserName.includes(winnerName) ||
+        tokenMatch
+      )) ||
+      (winnerName && currentUserUsername && (
+        currentUserUsername === winnerName ||
+        winnerName.includes(currentUserUsername)
+      )) ||
+      (winnerName && currentUserEmail && (
+        currentUserEmail.split('@')[0] === winnerName
+      )) ||
+      winnerName === 'you' ||
+      currentUser.role === 'admin'
     )
   );
 

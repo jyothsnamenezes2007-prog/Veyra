@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ExternalLink,
@@ -22,13 +22,14 @@ import { useAuctions } from '../context/AuctionContext';
 import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
+import { useToast } from '../context/ToastContext';
 import { formatINR } from '../data/products';
 import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
 
-export const LiveAuctionRoom = () => {
+export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -36,6 +37,11 @@ export const LiveAuctionRoom = () => {
   const { products } = useProducts();
   const { user } = useAuth();
   const { isInWishlist, toggleWishlist } = useWishlist();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const { addToast } = useToast();
+  const [showUnauthorizedModal, setShowUnauthorizedModal] = useState(false);
+  const [unauthorizedNotice, setUnauthorizedNotice] = useState('');
 
   // Find authoritative auction
   const auction = liveAuctions.find((a) => a.id === id || a.productId === id) || liveAuctions[0];
@@ -84,6 +90,52 @@ export const LiveAuctionRoom = () => {
   };
 
   // Chat comments for this specific lot
+  // Auto-open WebRTC room if on /meet/:id route or ?meet=true
+  useEffect(() => {
+    const isMeet = autoOpenMeet || location.pathname.startsWith('/meet/') || searchParams.get('meet') === 'true';
+    if (isMeet && auction) {
+      if (!user) {
+        addToast?.('Please sign in to enter the post-auction consultation room.', 'info');
+        navigate(`/signin?redirect=${encodeURIComponent(location.pathname)}`, { replace: true });
+        return;
+      }
+      const access = getMeetingAccess(auction, user);
+      if (!access.canAccessMeeting) {
+        setUnauthorizedNotice(
+          access.reason || `Access restricted: Only the winning buyer (${winner?.bidder || 'Winner'}) and seller (${auction.seller || 'Seller'}) may enter this meeting room.`
+        );
+        setShowUnauthorizedModal(true);
+        return;
+      }
+      setCallModalOpen(true);
+    }
+  }, [autoOpenMeet, location.pathname, searchParams, auction, user]);
+
+  const handleEnterMeeting = () => {
+    if (!user) {
+      addToast?.('Please sign in to enter the post-auction consultation room.', 'info');
+      navigate(`/signin?redirect=${encodeURIComponent(`/meet/${auction.id}`)}`);
+      return;
+    }
+    const access = getMeetingAccess(auction, user);
+    if (!access.canAccessMeeting) {
+      setUnauthorizedNotice(
+        access.reason || `Access restricted: Only the winning buyer (${winner?.bidder || 'Winner'}) and seller (${auction.seller || 'Seller'}) may enter this meeting room.`
+      );
+      setShowUnauthorizedModal(true);
+      return;
+    }
+    navigate(`/meet/${auction.id}`);
+    setCallModalOpen(true);
+  };
+
+  const handleCloseCallModal = () => {
+    setCallModalOpen(false);
+    if (location.pathname.startsWith('/meet/')) {
+      navigate(`/live/${auction.id}`, { replace: true });
+    }
+  };
+
   const lotComments = comments[auction.id] || [];
 
   // Ranked Leaderboard
@@ -782,31 +834,45 @@ export const LiveAuctionRoom = () => {
                     backgroundColor: 'var(--bg-primary)',
                     border: '1.5px solid var(--accent-burgundy)',
                     borderRadius: 'var(--radius-xs)',
-                    padding: '24px',
+                    padding: '28px 24px',
                     textAlign: 'center'
                   }}
                 >
                   <Trophy size={32} color="var(--accent-burgundy)" style={{ margin: '0 auto 10px' }} />
                   <h3 style={{ fontSize: '1.4rem', marginBottom: '6px' }}>Auction Successfully Concluded</h3>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px' }}>
                     Winning Bidder: <strong style={{ color: 'var(--text-primary)' }}>{winner?.bidder || 'Authoritative Bidder'}</strong> with final hammer price of <strong>{formatINR(auction.currentBid)}</strong>.
                   </p>
 
-                  {/* Private Meeting Action Button: "Enter Meeting" for Winner, "Meet Winner" for Seller */}
-                  {meetingAccess.canAccessMeeting ? (
+                  {/* Private Meeting Action Button: Clearly visible "Enter Meeting" (or "Meet Winner" for Seller) */}
+                  <div style={{ marginBottom: '16px' }}>
                     <button
-                      onClick={() => setCallModalOpen(true)}
+                      type="button"
+                      onClick={handleEnterMeeting}
                       className="btn btn-burgundy"
-                      style={{ height: '44px', padding: '0 28px', fontSize: '13.5px', gap: '8px', fontWeight: 600 }}
+                      style={{
+                        height: '46px',
+                        padding: '0 32px',
+                        fontSize: '14px',
+                        gap: '8px',
+                        fontWeight: 600,
+                        boxShadow: '0 2px 8px rgba(120, 59, 75, 0.25)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}
+                      id="post-auction-enter-meeting-btn"
                     >
-                      <Video size={17} />
-                      <span>{meetingAccess.buttonLabel}</span>
+                      <Video size={18} />
+                      <span>{isSellerUser ? 'Meet Winner' : 'Enter Meeting'}</span>
                     </button>
-                  ) : (
-                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
-                      Post-auction video consultations are reserved for the winning collector and artisan workshop.
-                    </p>
-                  )}
+                  </div>
+
+                  {/* Post-auction consultation text placed directly below the button */}
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5 }}>
+                    Post-auction private video consultation is reserved for the winning collector and artisan workshop to coordinate provenance, certificate verification, and bespoke shipping details.
+                  </p>
                 </div>
               )}
             </div>
@@ -997,8 +1063,81 @@ export const LiveAuctionRoom = () => {
         <AuctionCallModal
           auction={auction}
           currentUser={user}
-          onClose={() => setCallModalOpen(false)}
+          onClose={handleCloseCallModal}
         />
+      )}
+
+      {/* Unauthorized Access Notification Modal */}
+      {showUnauthorizedModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            backgroundColor: 'rgba(25, 25, 25, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            style={{
+              maxWidth: '460px',
+              width: '100%',
+              backgroundColor: '#FFFFFF',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xs)',
+              padding: '32px',
+              textAlign: 'center'
+            }}
+          >
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--accent-lavender-bg)',
+                color: 'var(--accent-burgundy)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px'
+              }}
+            >
+              <ShieldCheck size={24} />
+            </div>
+            <h3 style={{ fontSize: '1.4rem', marginBottom: '8px' }}>
+              Private Consultation Restricted
+            </h3>
+            <p
+              style={{
+                fontSize: 'var(--text-xs)',
+                color: 'var(--text-secondary)',
+                lineHeight: 1.6,
+                marginBottom: '24px'
+              }}
+            >
+              {unauthorizedNotice ||
+                `Live video consultations are exclusively reserved for the authoritative winner (${winner?.bidder || 'Winning Collector'}) and the artisan workshop (${auction.seller || 'Artisan Workshop'}).`}
+            </p>
+            <button
+              onClick={() => {
+                setShowUnauthorizedModal(false);
+                if (location.pathname.startsWith('/meet/')) {
+                  navigate(`/live/${auction.id}`, { replace: true });
+                }
+              }}
+              className="btn btn-primary"
+              style={{ width: '100%', height: '40px' }}
+            >
+              Return to Auction Lot
+            </button>
+          </div>
+        </div>
       )}
 
       <style>{`
