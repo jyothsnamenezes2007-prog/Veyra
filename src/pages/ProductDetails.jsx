@@ -13,14 +13,18 @@ import {
   MapPin,
   Calendar,
   Share2,
-  ChevronRight
+  ChevronRight,
+  Video
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductsContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuctions } from '../context/AuctionContext';
 import { formatINR } from '../data/products';
+import { getMeetingAccess } from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
+import { AuctionCallModal } from '../components/AuctionCallModal';
 
 export const ProductDetails = () => {
   const { id } = useParams();
@@ -29,10 +33,12 @@ export const ProductDetails = () => {
   const { products, getProductById } = useProducts();
   const { addToCart, recordRecentlyViewed } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
+  const { user } = useAuth();
   const { liveAuctions, upcomingAuctions, isReminderSet, toggleReminder, isRegistered, toggleRegistration } = useAuctions();
 
   const [quantity, setQuantity] = useState(1);
   const [justAdded, setJustAdded] = useState(false);
+  const [callModalOpen, setCallModalOpen] = useState(false);
 
   // Retrieve authoritative product
   const product = getProductById(id) || products.find((p) => p.id === id);
@@ -62,6 +68,7 @@ export const ProductDetails = () => {
   const linkedLiveAuction = liveAuctions.find(
     (a) => a.productId === product.id || a.id === product.auctionId || a.id === product.id
   );
+  const meetingAccess = linkedLiveAuction ? getMeetingAccess(linkedLiveAuction, user) : { canAccessMeeting: false };
 
   const linkedUpcomingAuction = upcomingAuctions.find(
     (u) => u.productId === product.id || u.id === product.upcomingId || u.id === product.id
@@ -349,14 +356,29 @@ export const ProductDetails = () => {
             {/* Purchasing / Bidding Actions */}
             {linkedLiveAuction ? (
               <div style={{ display: 'flex', gap: '12px' }}>
-                <Link
-                  to={`/live/${linkedLiveAuction.id}`}
-                  className="btn btn-burgundy"
-                  style={{ flex: 1, height: '46px', fontSize: '14px', gap: '8px' }}
-                >
-                  <Hammer size={16} />
-                  <span>Enter Live Bidding Room ({formatINR(linkedLiveAuction.currentBid)})</span>
-                </Link>
+                {meetingAccess.canAccessMeeting ? (
+                  <button
+                    onClick={() => setCallModalOpen(true)}
+                    className="btn btn-burgundy"
+                    style={{ flex: 1, height: '46px', fontSize: '14px', gap: '8px', fontWeight: 600 }}
+                  >
+                    <Video size={16} />
+                    <span>{meetingAccess.buttonLabel}</span>
+                  </button>
+                ) : (
+                  <Link
+                    to={`/live/${linkedLiveAuction.id}`}
+                    className="btn btn-burgundy"
+                    style={{ flex: 1, height: '46px', fontSize: '14px', gap: '8px' }}
+                  >
+                    <Hammer size={16} />
+                    <span>
+                      {linkedLiveAuction.status === 'ended' || (linkedLiveAuction.remainingSeconds ?? 0) <= 0
+                        ? `Auction Concluded (${formatINR(linkedLiveAuction.currentBid)})`
+                        : `Enter Live Bidding Room (${formatINR(linkedLiveAuction.currentBid)})`}
+                    </span>
+                  </Link>
+                )}
                 <button
                   onClick={() => toggleWishlist(product)}
                   className="btn btn-secondary"
@@ -497,6 +519,14 @@ export const ProductDetails = () => {
               ))}
             </div>
           </section>
+        )}
+        {/* Post-Auction Private Meeting Consultation Modal */}
+        {callModalOpen && linkedLiveAuction && (
+          <AuctionCallModal
+            auction={linkedLiveAuction}
+            currentUser={user}
+            onClose={() => setCallModalOpen(false)}
+          />
         )}
       </div>
     </div>

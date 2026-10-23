@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { INITIAL_LIVE_AUCTIONS, UPCOMING_AUCTIONS, DEMO_AUCTION_IDS, getDemoBaselineAuction } from '../data/auctions';
+import { INITIAL_LIVE_AUCTIONS, UPCOMING_AUCTIONS, DEMO_AUCTION_IDS, getDemoBaselineAuction, getAuthoritativeAuctionWinner, getMeetingAccess } from '../data/auctions';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -963,7 +963,9 @@ export const AuctionProvider = ({ children }) => {
         getLeaderboard,
         resetDemoAuction,
         resetAllDemoAuctions,
-        DEMO_AUCTION_IDS
+        DEMO_AUCTION_IDS,
+        getAuthoritativeAuctionWinner,
+        getMeetingAccess
       }}
     >
       {children}

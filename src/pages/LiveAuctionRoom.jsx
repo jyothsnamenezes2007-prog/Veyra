@@ -23,6 +23,7 @@ import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { formatINR } from '../data/products';
+import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
@@ -89,23 +90,14 @@ export const LiveAuctionRoom = () => {
   const leaderboard = getLeaderboard(auction.id);
   const leadingBidder = leaderboard[0];
 
-  // Winner calculation
-  const winner = !isLive && leaderboard.length > 0 ? leaderboard[0] : null;
+  // Authoritative Winner and Meeting Access
+  const authoritativeWinner = getAuthoritativeAuctionWinner(auction);
+  const winner = authoritativeWinner || (!isLive && leaderboard.length > 0 ? leaderboard[0] : null);
+  const meetingAccess = getMeetingAccess(auction, user);
 
-  // Determine if current user is authorized to call
-  const isWinningUser =
-    user &&
-    winner &&
-    (user.name.toLowerCase() === winner.bidder.toLowerCase() ||
-      winner.bidder.includes(user.name.split(' ')[0]) ||
-      winner.bidder.includes('You'));
-
-  const isSellerUser =
-    user &&
-    (user.role === 'artisan' ||
-      user.role === 'seller' ||
-      user.studio === auction.seller ||
-      user.name.toLowerCase() === auction.seller.toLowerCase());
+  // Determine if current user is authorized to call (retained for backward compatibility)
+  const isWinningUser = meetingAccess.isWinningBuyer;
+  const isSellerUser = meetingAccess.isSeller;
 
   // Handle bid submit
   const handleBidSubmit = (e) => {
@@ -800,15 +792,15 @@ export const LiveAuctionRoom = () => {
                     Winning Bidder: <strong style={{ color: 'var(--text-primary)' }}>{winner?.bidder || 'Authoritative Bidder'}</strong> with final hammer price of <strong>{formatINR(auction.currentBid)}</strong>.
                   </p>
 
-                  {/* Private Call Action Button for Winner or Seller */}
-                  {(isWinningUser || isSellerUser) ? (
+                  {/* Private Meeting Action Button: "Enter Meeting" for Winner, "Meet Winner" for Seller */}
+                  {meetingAccess.canAccessMeeting ? (
                     <button
                       onClick={() => setCallModalOpen(true)}
                       className="btn btn-burgundy"
-                      style={{ height: '42px', padding: '0 24px', fontSize: '13px', gap: '8px' }}
+                      style={{ height: '44px', padding: '0 28px', fontSize: '13.5px', gap: '8px', fontWeight: 600 }}
                     >
-                      <Video size={16} />
-                      <span>{isWinningUser ? 'Initiate Private Call with Maker' : 'Enter Winner Video Consultation'}</span>
+                      <Video size={17} />
+                      <span>{meetingAccess.buttonLabel}</span>
                     </button>
                   ) : (
                     <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import {
   User,
@@ -19,7 +19,9 @@ import {
   Phone,
   Mail,
   AlertCircle,
-  X
+  X,
+  Video,
+  Trophy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -27,6 +29,8 @@ import { useWishlist } from '../context/WishlistContext';
 import { useAuctions } from '../context/AuctionContext';
 import { useProducts } from '../context/ProductsContext';
 import { formatINR } from '../data/products';
+import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
+import { AuctionCallModal } from '../components/AuctionCallModal';
 
 export const Account = () => {
   const { user, signOut, updateProfile } = useAuth();
@@ -40,6 +44,7 @@ export const Account = () => {
 
   const initialTab = searchParams.get('tab') || 'overview';
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeMeetingAuction, setActiveMeetingAuction] = useState(null);
 
   // Edit settings form state
   const [formData, setFormData] = useState({
@@ -75,6 +80,24 @@ export const Account = () => {
     searchParams.set('tab', tabKey);
     setSearchParams(searchParams);
   };
+
+  // Authoritatively finalized auctions won by the current user
+  const wonAuctions = useMemo(() => {
+    if (!user) return [];
+    return liveAuctions.filter((auction) => {
+      const access = getMeetingAccess(auction, user);
+      return access.canAccessMeeting && access.buttonLabel === 'Enter Meeting';
+    });
+  }, [liveAuctions, user]);
+
+  // Authoritatively finalized auctions where current user is the seller
+  const sellerCompletedAuctions = useMemo(() => {
+    if (!user) return [];
+    return liveAuctions.filter((auction) => {
+      const access = getMeetingAccess(auction, user);
+      return access.canAccessMeeting && access.buttonLabel === 'Meet Winner';
+    });
+  }, [liveAuctions, user]);
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
@@ -661,6 +684,82 @@ export const Account = () => {
                   </Link>
                 </div>
 
+                {/* Completed Auctions: Meet Winner Section */}
+                {sellerCompletedAuctions.length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: 'rgba(120, 59, 75, 0.05)',
+                      border: '1px solid rgba(120, 59, 75, 0.25)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '20px',
+                      marginBottom: '28px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <Video size={18} color="var(--accent-burgundy)" />
+                      <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--accent-burgundy)' }}>
+                        Completed Auctions — Winner Consultations ({sellerCompletedAuctions.length})
+                      </h3>
+                    </div>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+                      The following auction lots have concluded with a verified winning buyer. Connect directly with the collector in your private WebRTC meeting room.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {sellerCompletedAuctions.map((auc) => {
+                        const winner = getAuthoritativeAuctionWinner(auc);
+                        return (
+                          <div
+                            key={auc.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '12px',
+                              backgroundColor: '#FFFFFF',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: 'var(--radius-xs)',
+                              padding: '14px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <img
+                                src={auc.image}
+                                alt={auc.name}
+                                style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--surface-secondary)' }}
+                              />
+                              <div>
+                                <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)', display: 'block' }}>
+                                  {auc.name}
+                                </strong>
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  Winner: <strong style={{ color: 'var(--accent-burgundy)' }}>{winner?.bidder || 'Winning Collector'}</strong> • Hammer: <strong>{formatINR(auc.currentBid)}</strong>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <button
+                                onClick={() => setActiveMeetingAuction(auc)}
+                                className="btn btn-burgundy btn-sm"
+                                style={{ gap: '6px', height: '36px', padding: '0 16px', fontWeight: 600 }}
+                              >
+                                <Video size={14} />
+                                <span>Meet Winner</span>
+                              </button>
+
+                              <Link to={`/live/${auc.id}`} className="btn btn-secondary btn-sm" style={{ height: '36px' }}>
+                                Auction Lot
+                              </Link>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {customProducts.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {customProducts.map((prod) => (
@@ -712,67 +811,166 @@ export const Account = () => {
                   </p>
                 </div>
 
+                {/* Won Auctions Section with "Enter Meeting" Button */}
+                {wonAuctions.length > 0 && (
+                  <div
+                    style={{
+                      backgroundColor: 'rgba(120, 59, 75, 0.05)',
+                      border: '1px solid rgba(120, 59, 75, 0.25)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '20px',
+                      marginBottom: '28px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <Trophy size={18} color="var(--accent-burgundy)" />
+                      <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--accent-burgundy)' }}>
+                        Won Auctions & Private Consultations ({wonAuctions.length})
+                      </h3>
+                    </div>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
+                      Congratulations! Your bids have won the following completed auction lots. Enter your private WebRTC meeting room to consult directly with the artisan workshop.
+                    </p>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {wonAuctions.map((wonLot) => (
+                        <div
+                          key={wonLot.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            backgroundColor: '#FFFFFF',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 'var(--radius-xs)',
+                            padding: '14px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <img
+                              src={wonLot.image}
+                              alt={wonLot.name}
+                              style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: 'var(--radius-xs)', backgroundColor: 'var(--surface-secondary)' }}
+                            />
+                            <div>
+                              <strong style={{ fontSize: '13.5px', color: 'var(--text-primary)', display: 'block' }}>
+                                {wonLot.name}
+                              </strong>
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                Maker: <strong>{wonLot.seller || wonLot.maker}</strong> • Winning Hammer: <strong>{formatINR(wonLot.currentBid)}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <button
+                              onClick={() => setActiveMeetingAuction(wonLot)}
+                              className="btn btn-burgundy btn-sm"
+                              style={{ gap: '6px', height: '36px', padding: '0 16px', fontWeight: 600 }}
+                            >
+                              <Video size={14} />
+                              <span>Enter Meeting</span>
+                            </button>
+
+                            <Link to={`/live/${wonLot.id}`} className="btn btn-secondary btn-sm" style={{ height: '36px' }}>
+                              Details
+                            </Link>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {userBids.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {userBids.map((b) => (
-                      <div
-                        key={b.id}
-                        style={{
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 'var(--radius-xs)',
-                          padding: '16px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '16px',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          {b.image && (
-                            <div style={{ width: '56px', height: '56px', borderRadius: 'var(--radius-xs)', overflow: 'hidden', backgroundColor: 'var(--surface-secondary)', flexShrink: 0 }}>
-                              <img src={b.image} alt={b.auctionTitle} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {userBids.map((b) => {
+                      const matchedAuction = liveAuctions.find((a) => a.id === b.auctionId || a.productId === b.auctionId);
+                      const access = matchedAuction ? getMeetingAccess(matchedAuction, user) : { canAccessMeeting: false };
+                      const isWonAndClosed = access.isWinningBuyer && access.canAccessMeeting;
+
+                      return (
+                        <div
+                          key={b.id}
+                          style={{
+                            border: isWonAndClosed ? '1.5px solid var(--accent-burgundy)' : '1px solid var(--border-color)',
+                            backgroundColor: isWonAndClosed ? '#FFFDFB' : '#FFFFFF',
+                            borderRadius: 'var(--radius-xs)',
+                            padding: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '16px',
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            {b.image && (
+                              <div style={{ width: '56px', height: '56px', borderRadius: 'var(--radius-xs)', overflow: 'hidden', backgroundColor: 'var(--surface-secondary)', flexShrink: 0 }}>
+                                <img src={b.image} alt={b.auctionTitle} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                            )}
+                            <div>
+                              <Link to={`/live/${b.auctionId}`} style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }} className="hover-burgundy">
+                                {b.auctionTitle}
+                              </Link>
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>
+                                Bid placed {b.time}
+                              </span>
                             </div>
-                          )}
-                          <div>
-                            <Link to={`/live/${b.auctionId}`} style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }} className="hover-burgundy">
-                              {b.auctionTitle}
-                            </Link>
-                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>
-                              Bid placed {b.time}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                          <div>
-                            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block' }}>
-                              Your Bid
-                            </span>
-                            <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                              {formatINR(b.amount)}
-                            </strong>
                           </div>
 
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: b.status === 'Leading' ? 'var(--badge-shipping-bg)' : 'rgba(158, 58, 58, 0.1)',
-                              color: b.status === 'Leading' ? 'var(--badge-shipping-text)' : 'var(--error-color)'
-                            }}
-                          >
-                            {b.status}
-                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                            <div>
+                              <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-secondary)', display: 'block' }}>
+                                Your Bid
+                              </span>
+                              <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+                                {formatINR(b.amount)}
+                              </strong>
+                            </div>
 
-                          <Link to={`/live/${b.auctionId}`} className="btn btn-secondary btn-sm">
-                            Floor Room
-                          </Link>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-xs)',
+                                backgroundColor: isWonAndClosed
+                                  ? 'rgba(40, 167, 69, 0.12)'
+                                  : b.status === 'Leading'
+                                  ? 'var(--badge-shipping-bg)'
+                                  : 'rgba(158, 58, 58, 0.1)',
+                                color: isWonAndClosed
+                                  ? '#1e7e34'
+                                  : b.status === 'Leading'
+                                  ? 'var(--badge-shipping-text)'
+                                  : 'var(--error-color)'
+                              }}
+                            >
+                              {isWonAndClosed ? 'Auction Won' : b.status}
+                            </span>
+
+                            {isWonAndClosed ? (
+                              <button
+                                onClick={() => setActiveMeetingAuction(matchedAuction)}
+                                className="btn btn-burgundy btn-sm"
+                                style={{ gap: '6px', height: '34px', padding: '0 14px', fontWeight: 600 }}
+                              >
+                                <Video size={13} />
+                                <span>Enter Meeting</span>
+                              </button>
+                            ) : (
+                              <Link to={`/live/${b.auctionId}`} className="btn btn-secondary btn-sm" style={{ height: '34px' }}>
+                                Floor Room
+                              </Link>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -966,6 +1164,15 @@ export const Account = () => {
           </div>
         </div>
       </div>
+
+      {/* Post-Auction Private Meeting Consultation Modal */}
+      {activeMeetingAuction && (
+        <AuctionCallModal
+          auction={activeMeetingAuction}
+          currentUser={user}
+          onClose={() => setActiveMeetingAuction(null)}
+        />
+      )}
 
       <style>{`
         @media (max-width: 860px) {

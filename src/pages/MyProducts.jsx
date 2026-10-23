@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   ChevronDown,
   Save,
-  UserCircle
+  UserCircle,
+  Video
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductsContext';
@@ -22,6 +23,8 @@ import { useAuctions } from '../context/AuctionContext';
 import { useCart } from '../context/CartContext';
 import { useSellerProfile } from '../context/SellerProfileContext';
 import { formatINR } from '../data/products';
+import { getMeetingAccess } from '../data/auctions';
+import { AuctionCallModal } from '../components/AuctionCallModal';
 
 // Status config: label, colour tokens, icon
 const STATUS_CONFIG = {
@@ -107,6 +110,7 @@ export const MyProducts = () => {
   const { getSellerProfile, updateSellerProfile } = useSellerProfile();
 
   const [filterStatus, setFilterStatus] = useState('all');
+  const [activeMeetingAuction, setActiveMeetingAuction] = useState(null);
 
   // Profile edit panel state
   const [profileEditOpen, setProfileEditOpen] = useState(false);
@@ -612,6 +616,8 @@ export const MyProducts = () => {
                 updateProductStatus={updateProductStatus}
                 approveAuctionLot={approveAuctionLot}
                 rejectAuctionLot={rejectAuctionLot}
+                onOpenMeeting={setActiveMeetingAuction}
+                currentUser={user}
               />
             ))}
           </div>
@@ -622,6 +628,14 @@ export const MyProducts = () => {
           <SoldProductsList products={myProducts.filter(p => p.derivedStatus === 'sold')} />
         )}
 
+        {/* Post-Auction Private Meeting Consultation Modal */}
+        {activeMeetingAuction && (
+          <AuctionCallModal
+            auction={activeMeetingAuction}
+            currentUser={user}
+            onClose={() => setActiveMeetingAuction(null)}
+          />
+        )}
       </div>
 
       <style>{`
@@ -636,10 +650,11 @@ export const MyProducts = () => {
 };
 
 // Individual product row in the table
-const ProductRow = ({ product, isLast, liveAuctions, updateProductStatus, approveAuctionLot, rejectAuctionLot }) => {
+const ProductRow = ({ product, isLast, liveAuctions, updateProductStatus, approveAuctionLot, rejectAuctionLot, onOpenMeeting, currentUser }) => {
   const liveAuction = liveAuctions.find(a =>
     a.productId === product.id || a.id === product.id || a.id === product.auctionId
   );
+  const meetingAccess = liveAuction && currentUser ? getMeetingAccess(liveAuction, currentUser) : { canAccessMeeting: false };
 
   return (
     <div style={{
@@ -740,6 +755,28 @@ const ProductRow = ({ product, isLast, liveAuctions, updateProductStatus, approv
             >
               <Gavel size={12} />
             </Link>
+          )}
+          {meetingAccess.canAccessMeeting && meetingAccess.buttonLabel === 'Meet Winner' && (
+            <button
+              onClick={() => onOpenMeeting(liveAuction)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '5px 10px',
+                backgroundColor: 'var(--accent-burgundy)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 'var(--radius-xs)',
+                fontSize: '11px',
+                gap: '5px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              title="Meet winning bidder in private WebRTC consultation"
+            >
+              <Video size={12} />
+              <span>Meet Winner</span>
+            </button>
           )}
         </div>
       </div>
