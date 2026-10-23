@@ -148,13 +148,7 @@ function simulatePlaceBid(auction, amount, bidderName, userId, now = Date.now())
     return { success: false, error: 'This auction has not opened yet. Bidding begins at the scheduled start time.' };
   }
 
-  // 2. Minimum amount
-  const minAcceptable = auction.currentBid + auction.minIncrement;
-  if (Number(amount) < minAcceptable) {
-    return { success: false, error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.` };
-  }
-
-  // 3. Duplicate checks
+  // 2. Duplicate checks
   const topBid = auction.bidHistory && auction.bidHistory.length > 0 ? auction.bidHistory[0] : null;
   if (topBid) {
     if (Number(amount) === topBid.amount) {
@@ -166,6 +160,12 @@ function simulatePlaceBid(auction, amount, bidderName, userId, now = Date.now())
     if (topBid.bidderId === userId && Number(amount) <= topBid.amount) {
       return { success: false, error: 'You are already the leading bidder.' };
     }
+  }
+
+  // 3. Minimum amount
+  const minAcceptable = auction.currentBid + auction.minIncrement;
+  if (Number(amount) < minAcceptable) {
+    return { success: false, error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.` };
   }
 
   const newRecord = {

@@ -728,17 +728,7 @@ export const AuctionProvider = ({ children }) => {
           return auction;
         }
 
-        // 2. Minimum amount validation
-        const minAcceptable = auction.currentBid + auction.minIncrement;
-        if (Number(amount) < minAcceptable) {
-          outcome = {
-            success: false,
-            error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.`
-          };
-          return auction;
-        }
-
-        // 3. Duplicate bid prevention & rapid double-click guard
+        // 2. Duplicate bid prevention & rapid double-click guard
         const topBid = auction.bidHistory && auction.bidHistory.length > 0 ? auction.bidHistory[0] : null;
         if (topBid) {
           if (Number(amount) === topBid.amount) {
@@ -764,6 +754,16 @@ export const AuctionProvider = ({ children }) => {
             };
             return auction;
           }
+        }
+
+        // 3. Minimum amount validation
+        const minAcceptable = auction.currentBid + auction.minIncrement;
+        if (Number(amount) < minAcceptable) {
+          outcome = {
+            success: false,
+            error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.`
+          };
+          return auction;
         }
 
         const newRecord = {
