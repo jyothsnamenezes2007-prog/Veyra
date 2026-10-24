@@ -821,100 +821,300 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
 
               {/* BIDDING CONTROLS OR WINNER ANNOUNCEMENT */}
               {isLive ? (
-                <form onSubmit={handleBidSubmit}>
-                  {/* Suggested Increments */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
-                      Suggested Next Bids
-                    </span>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
-                      >
-                        +{formatINR(auction.minIncrement)}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement * 2)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
-                      >
-                        +{formatINR(auction.minIncrement * 2)}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement * 4)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
-                      >
-                        +{formatINR(auction.minIncrement * 4)}
-                      </button>
+                <div>
+                  {/* --- SECTION 1: PLACE A BID --- */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <h3 style={{ fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0, color: 'var(--text-primary)' }}>
+                        Place a Bid
+                      </h3>
+                      <span style={{ fontSize: '12px', color: 'var(--accent-burgundy)', fontWeight: 600 }}>
+                        Minimum Next: {formatINR(minRequiredBid)}
+                      </span>
                     </div>
-                  </div>
 
-                  {/* Custom Bid Input & Submit */}
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Custom Bid Amount (INR)
-                    </label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      <div style={{ position: 'relative', flex: 1 }}>
-                        <span style={{ position: 'absolute', left: '12px', top: '10px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                          ₹
-                        </span>
-                        <input
-                          type="number"
-                          step={auction.minIncrement}
-                          min={minRequiredBid}
-                          value={customBid}
-                          onChange={(e) => setCustomBid(e.target.value)}
-                          placeholder={`Enter at least ${minRequiredBid}`}
+                    <form onSubmit={handleBidSubmit}>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <span style={{ position: 'absolute', left: '12px', top: '10px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            step={auction.minIncrement}
+                            min={minRequiredBid}
+                            value={customBid}
+                            onChange={(e) => setCustomBid(e.target.value)}
+                            placeholder={`Enter at least ${minRequiredBid}`}
+                            style={{
+                              width: '100%',
+                              height: '42px',
+                              paddingLeft: '28px',
+                              paddingRight: '12px',
+                              border: '1.5px solid var(--border-color)',
+                              borderRadius: 'var(--radius-xs)',
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              outline: 'none',
+                              color: 'var(--text-primary)'
+                            }}
+                          />
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="btn btn-burgundy"
                           style={{
-                            width: '100%',
-                            height: '44px',
-                            paddingLeft: '28px',
-                            paddingRight: '12px',
-                            border: '1.5px solid var(--border-color)',
-                            borderRadius: 'var(--radius-xs)',
-                            fontSize: '15px',
+                            height: '42px',
+                            padding: '0 24px',
                             fontWeight: 600,
-                            outline: 'none',
-                            color: 'var(--text-primary)'
+                            fontSize: '13px',
+                            letterSpacing: '0.04em',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px'
                           }}
-                        />
+                        >
+                          <Hammer size={15} />
+                          <span>Place Bid</span>
+                        </button>
                       </div>
 
-                      <button
-                        type="submit"
-                        className="btn btn-burgundy"
-                        style={{
-                          height: '44px',
-                          padding: '0 24px',
-                          fontWeight: 600,
-                          fontSize: '13px',
-                          letterSpacing: '0.04em'
-                        }}
-                      >
-                        <Hammer size={16} />
-                        <span>Submit Official Bid</span>
-                      </button>
-                    </div>
-
-                    {bidError && (
-                      <p style={{ color: 'var(--error-color)', fontSize: '12px', marginTop: '6px', margin: '6px 0 0' }}>
-                        {bidError}
-                      </p>
-                    )}
+                      {bidError && (
+                        <p style={{ color: 'var(--error-color)', fontSize: '12px', marginTop: '6px', margin: '6px 0 0' }}>
+                          {bidError}
+                        </p>
+                      )}
+                    </form>
                   </div>
 
-                  <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
-                    <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} />
-                    Bids are legally binding and synchronized across all Veyra trading terminals.
-                  </p>
-                </form>
+                  {/* Subtle Separator */}
+                  <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '22px 0' }} />
+
+                  {/* --- SECTION 2: AI AUTO-BID (GEMINI 3.8 FLASH) --- */}
+                  <div id="veyra-auto-bid-panel">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <Bot size={16} color="var(--accent-burgundy)" />
+                        <h3 style={{ fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0, color: 'var(--text-primary)' }}>
+                          AI Auto-Bid Agent
+                        </h3>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          letterSpacing: '0.05em',
+                          padding: '2px 8px',
+                          backgroundColor: 'rgba(120, 59, 75, 0.08)',
+                          color: 'var(--accent-burgundy)',
+                          borderRadius: 'var(--radius-xs)',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        Gemini 3.8 Flash
+                      </span>
+                    </div>
+
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 14px 0', lineHeight: 1.4 }}>
+                      Set your confidential maximum budget. The server agent defends your lead automatically whenever competing bids are placed.
+                    </p>
+
+                    {autoBidConfig && autoBidConfig.enabled && !isEditingAutoBid ? (
+                      /* Active Auto-Bid Summary Row */
+                      <div
+                        style={{
+                          backgroundColor: 'var(--bg-primary)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-xs)',
+                          padding: '14px 16px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {autoBidConfig.status === 'budget_reached' ? (
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  letterSpacing: '0.04em',
+                                  padding: '3px 8px',
+                                  backgroundColor: 'rgba(255, 193, 7, 0.15)',
+                                  color: '#856404',
+                                  borderRadius: 'var(--radius-xs)'
+                                }}
+                              >
+                                Budget Reached
+                              </span>
+                            ) : (
+                              <span className="badge-live">
+                                <span className="dot" />
+                                <span>Auto-bid Active</span>
+                              </span>
+                            )}
+                            <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>
+                              Authorized ceiling: <strong>{formatINR(autoBidConfig.maxBudget)}</strong> (+₹{autoBidConfig.preferredIncrement})
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingAutoBid(true)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ height: '30px', fontSize: '11px', padding: '0 10px' }}
+                            >
+                              Update
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleDisableAutoBid}
+                              className="btn btn-sm"
+                              disabled={autoBidLoading}
+                              style={{
+                                height: '30px',
+                                fontSize: '11px',
+                                padding: '0 10px',
+                                border: '1px solid var(--border-color)',
+                                backgroundColor: '#FFFFFF',
+                                color: 'var(--text-secondary)'
+                              }}
+                            >
+                              Disable
+                            </button>
+                          </div>
+                        </div>
+
+                        <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
+                          Confidential — your maximum budget is never revealed to competing bidders or the seller.
+                        </p>
+                      </div>
+                    ) : (
+                      /* Auto-Bid Configuration Form */
+                      <form onSubmit={handleSaveAutoBid}>
+                        {/* Maximum Budget Input */}
+                        <div style={{ marginBottom: '12px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                            Maximum Budget (INR)
+                          </label>
+                          <div style={{ position: 'relative' }}>
+                            <span style={{ position: 'absolute', left: '12px', top: '9px', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                              ₹
+                            </span>
+                            <input
+                              type="number"
+                              min={minRequiredBid}
+                              value={autoBidBudget}
+                              onChange={(e) => setAutoBidBudget(e.target.value)}
+                              placeholder={`e.g. ${minRequiredBid + 10000}`}
+                              style={{
+                                width: '100%',
+                                height: '38px',
+                                paddingLeft: '28px',
+                                paddingRight: '12px',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 'var(--radius-xs)',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                outline: 'none',
+                                color: 'var(--text-primary)',
+                                backgroundColor: '#FFFFFF'
+                              }}
+                            />
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+                            Confidential ceiling. The agent will never bid beyond this amount.
+                          </span>
+                        </div>
+
+                        {/* Preferred Increment Selector */}
+                        <div style={{ marginBottom: '14px' }}>
+                          <label style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                            Preferred Increment
+                          </label>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {[55, 60, 65, 70].map((inc) => (
+                              <button
+                                key={inc}
+                                type="button"
+                                onClick={() => setIncrementPreset(inc)}
+                                className={incrementPreset === inc ? 'btn btn-burgundy btn-sm' : 'btn btn-secondary btn-sm'}
+                                style={{ minWidth: '54px', height: '32px', fontSize: '12px', fontWeight: 600 }}
+                              >
+                                ₹{inc}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => setIncrementPreset('custom')}
+                              className={incrementPreset === 'custom' ? 'btn btn-burgundy btn-sm' : 'btn btn-secondary btn-sm'}
+                              style={{ height: '32px', fontSize: '12px', fontWeight: 600 }}
+                            >
+                              Custom
+                            </button>
+
+                            {incrementPreset === 'custom' && (
+                              <div style={{ position: 'relative', width: '100px' }}>
+                                <span style={{ position: 'absolute', left: '8px', top: '7px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={customIncrement}
+                                  onChange={(e) => setCustomIncrement(e.target.value)}
+                                  placeholder="Amount"
+                                  style={{
+                                    width: '100%',
+                                    height: '32px',
+                                    paddingLeft: '22px',
+                                    paddingRight: '6px',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 'var(--radius-xs)',
+                                    fontSize: '12px',
+                                    outline: 'none',
+                                    backgroundColor: '#FFFFFF'
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', display: 'block' }}>
+                            Auction rules require at least +{formatINR(auction.minIncrement)}. The server authoritative agent respects both floor minimums and your preference.
+                          </span>
+                        </div>
+
+                        {autoBidError && (
+                          <p style={{ color: 'var(--error-color)', fontSize: '12px', marginBottom: '10px', marginTop: 0 }}>
+                            {autoBidError}
+                          </p>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="submit"
+                            className="btn btn-burgundy btn-sm"
+                            disabled={autoBidLoading}
+                            style={{ height: '36px', padding: '0 20px', fontWeight: 600, fontSize: '12px' }}
+                          >
+                            {isEditingAutoBid ? 'Update Auto-bid' : 'Enable Auto-bid'}
+                          </button>
+
+                          {isEditingAutoBid && (
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingAutoBid(false)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ height: '36px', padding: '0 14px', fontSize: '12px' }}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
               ) : isUpcoming ? (
                 /* Auction Upcoming Scheduled State */
                 <div
