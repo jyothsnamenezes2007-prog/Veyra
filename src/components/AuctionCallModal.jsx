@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Video,
   VideoOff,
@@ -93,8 +93,11 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const localVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const signalingRef = useRef(null);
   const durationTimerRef = useRef(null);
+  const disconnectGraceTimerRef = useRef(null);
+  const isNegotiatingRef = useRef(false);
   const iceCandidateQueueRef = useRef([]);
   const remoteDescSetRef = useRef(false);
   const setMeetMessagesRef = useRef(setMeetMessages);
@@ -110,17 +113,26 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   userRoleRef.current = userRole;
   setMeetMessagesRef.current = setMeetMessages;
 
-  // ── Local video element ref callback ────────────────────────────────────────
-  const localVideoCallbackRef = (el) => {
+  // ── Stable video element callbacks to avoid re-triggering media reload on typing ────
+  const localVideoCallbackRef = useCallback((el) => {
     localVideoRef.current = el;
-    if (el && localStreamRef.current) {
+    if (el && localStreamRef.current && el.srcObject !== localStreamRef.current) {
       el.srcObject = localStreamRef.current;
     }
-  };
+  }, []);
+
+  const remoteVideoCallbackRef = useCallback((el) => {
+    remoteVideoRef.current = el;
+    if (el && remoteStreamRef.current && el.srcObject !== remoteStreamRef.current) {
+      el.srcObject = remoteStreamRef.current;
+    }
+  }, []);
 
   // ── Add chat message helper ─────────────────────────────────────────────────
   const addMessageToState = (msg) => {
     setMeetMessagesRef.current((prev) => {
+      // Deduplicate by message ID
+      if (prev.some((m) => m.id === msg.id)) return prev;
       const next = [...prev, msg];
       persistMessages(auctionIdRef.current, next);
       return next;
@@ -173,7 +185,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       }
 
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
+      if (localVideoRef.current && localVideoRef.current.srcObject !== stream) {
         localVideoRef.current.srcObject = stream;
       }
       return stream;
@@ -209,8 +221,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
 
     pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      const remoteStream = event.streams[0];
+      remoteStreamRef.current = remoteStream;
+      if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+      if (disconnectGraceTimerRef.current) {
+        clearTimeout(disconnectGraceTimerRef.current);
+        disconnectGraceTimerRef.current = null;
       }
       setCallState('CONNECTED');
       setOtherParticipantPresent(true);
@@ -225,16 +243,51 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === 'connected') {
+        if (disconnectGraceTimerRef.current) {
+          clearTimeout(disconnectGraceTimerRef.current);
+          disconnectGraceTimerRef.current = null;
+        }
         setCallState('CONNECTED');
         setOtherParticipantPresent(true);
-      } else if (state === 'disconnected' || state === 'failed') {
-        // Return to waiting room if connection drops
+      } else if (state === 'disconnected') {
+        // Disconnected is an advisory state during idle or NAT refreshes.
+        // Use a grace period before reverting to waiting room to avoid premature drops.
+        if (!disconnectGraceTimerRef.current) {
+          disconnectGraceTimerRef.current = setTimeout(() => {
+            if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+              setCallState('WAITING');
+              setOtherParticipantPresent(false);
+            }
+            disconnectGraceTimerRef.current = null;
+          }, 6000);
+        }
+      } else if (state === 'failed') {
+        if (disconnectGraceTimerRef.current) {
+          clearTimeout(disconnectGraceTimerRef.current);
+          disconnectGraceTimerRef.current = null;
+        }
         setCallState('WAITING');
         setOtherParticipantPresent(false);
       } else if (state === 'closed') {
+        if (disconnectGraceTimerRef.current) {
+          clearTimeout(disconnectGraceTimerRef.current);
+          disconnectGraceTimerRef.current = null;
+        }
         if (callStateRef.current === 'CONNECTED') {
           setCallState('WAITING');
         }
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      const iceState = pc.iceConnectionState;
+      if (iceState === 'connected' || iceState === 'completed') {
+        if (disconnectGraceTimerRef.current) {
+          clearTimeout(disconnectGraceTimerRef.current);
+          disconnectGraceTimerRef.current = null;
+        }
+        setCallState('CONNECTED');
+        setOtherParticipantPresent(true);
       }
     };
 
@@ -243,9 +296,19 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
 
   // ── Initiate WebRTC call (Buyer side creates offer) ─────────────────────────
   const initiateCallOffer = async () => {
+    // Guard against duplicate overlapping offers or when already connected
+    if (isNegotiatingRef.current) return;
+    if (callStateRef.current === 'CONNECTED' && peerConnectionRef.current?.connectionState === 'connected') {
+      return;
+    }
+
     try {
+      isNegotiatingRef.current = true;
       const stream = localStreamRef.current || (await obtainLocalMedia());
-      if (!stream) return;
+      if (!stream) {
+        isNegotiatingRef.current = false;
+        return;
+      }
 
       setCallState('CONNECTING');
       const pc = setupPeerConnection(stream);
@@ -256,6 +319,8 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       console.error('Error creating offer:', err);
       setErrorMessage('Failed to establish peer connection.');
       setCallState('ERROR');
+    } finally {
+      isNegotiatingRef.current = false;
     }
   };
 
@@ -287,7 +352,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
 
     const unsubscribe = signaling.onMessage(async (message) => {
       if (!isMounted) return;
-      const { type, data, role: senderRole } = message;
+      const { type, data } = message;
 
       const _userRole = userRoleRef.current;
       const _currentUser = currentUserRef.current;
@@ -304,7 +369,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           });
 
           // Deterministic initiator: Buyer creates the SDP offer
-          if (_userRole === 'buyer') {
+          if (_userRole === 'buyer' && !isNegotiatingRef.current && callStateRef.current !== 'CONNECTED') {
             await initiateCallOffer();
           }
           break;
@@ -312,9 +377,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
         case 'ROOM_PRESENCE_ACK':
           // The other participant was already present in the room!
           setOtherParticipantPresent(true);
-          if (_userRole === 'buyer') {
+          if (_userRole === 'buyer' && !isNegotiatingRef.current && callStateRef.current !== 'CONNECTED') {
             await initiateCallOffer();
           }
+          break;
+
+        case 'ROOM_HEARTBEAT':
+          // Confirms peer presence without resetting connections or media streams
+          setOtherParticipantPresent(true);
           break;
 
         case 'SDP_OFFER':
@@ -345,11 +415,13 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           // Buyer receives answer from seller
           if (_userRole === 'buyer' && peerConnectionRef.current) {
             try {
-              await peerConnectionRef.current.setRemoteDescription(
-                new RTCSessionDescription(data)
-              );
-              remoteDescSetRef.current = true;
-              await drainIceCandidateQueue();
+              if (peerConnectionRef.current.signalingState === 'have-local-offer') {
+                await peerConnectionRef.current.setRemoteDescription(
+                  new RTCSessionDescription(data)
+                );
+                remoteDescSetRef.current = true;
+                await drainIceCandidateQueue();
+              }
             } catch (err) {
               console.error('Error setting remote description:', err);
             }
@@ -379,6 +451,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             peerConnectionRef.current.close();
             peerConnectionRef.current = null;
           }
+          remoteStreamRef.current = null;
           setCallState('WAITING');
           addToastRef.current('The other participant left the consultation room.');
           break;
@@ -397,27 +470,30 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     // Start local media acquisition and announce entry
     initializeRoom();
 
-    // Cross-tab broadcast listener for chat
-    let chatBc;
-    if (typeof BroadcastChannel !== 'undefined') {
-      chatBc = new BroadcastChannel(`veyra_meet_chat_${auction.id}`);
-      chatBc.onmessage = (event) => {
-        const msg = event.data;
-        if (msg && msg.senderId !== currentUserRef.current?.id) {
-          addMessageToState(msg);
-        }
-      };
-    }
+    // Periodic heartbeat every 15s to maintain presence and prevent idle disconnects
+    const heartbeatTimer = setInterval(() => {
+      if (isMounted && signalingRef.current) {
+        signalingRef.current.send('ROOM_HEARTBEAT', {
+          userId: currentUser.id,
+          role: userRole
+        });
+      }
+    }, 15000);
 
     return () => {
       isMounted = false;
+      clearInterval(heartbeatTimer);
+      if (disconnectGraceTimerRef.current) {
+        clearTimeout(disconnectGraceTimerRef.current);
+        disconnectGraceTimerRef.current = null;
+      }
       signaling.send('CALL_ENDED', { reason: 'participant_left' });
       unsubscribe();
       signaling.destroy();
       signalingRef.current = null;
-      if (chatBc) chatBc.close();
       stopMediaStream(localStreamRef.current);
       localStreamRef.current = null;
+      remoteStreamRef.current = null;
       peerConnectionRef.current?.close();
       peerConnectionRef.current = null;
     };
@@ -459,9 +535,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   };
 
   const handleHangUp = () => {
+    if (disconnectGraceTimerRef.current) {
+      clearTimeout(disconnectGraceTimerRef.current);
+      disconnectGraceTimerRef.current = null;
+    }
     signalingRef.current?.send('CALL_ENDED', {});
     stopMediaStream(localStreamRef.current);
     localStreamRef.current = null;
+    remoteStreamRef.current = null;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     setCallState('ENDED');
@@ -495,16 +576,6 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       addMessageToState(msg);
       setMeetInput('');
       signalingRef.current?.send('CHAT_MESSAGE', msg);
-
-      if (typeof BroadcastChannel !== 'undefined') {
-        try {
-          const bc = new BroadcastChannel(`veyra_meet_chat_${auction.id}`);
-          bc.postMessage(msg);
-          bc.close();
-        } catch {
-          // ignore
-        }
-      }
     } catch {
       setChatError('Failed to send message. Please try again.');
       addToast('Message send failed.');
@@ -657,7 +728,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           >
             {/* Remote video (full size when CONNECTED) */}
             <video
-              ref={remoteVideoRef}
+              ref={remoteVideoCallbackRef}
               autoPlay
               playsInline
               style={{
