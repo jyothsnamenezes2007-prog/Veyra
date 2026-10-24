@@ -750,6 +750,215 @@
   ],
   "auctions": [
     {
+      "id": "auc-socket-test-1792861884748",
+      "productId": "prod-test-1792861884748",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 36000,
+      "minIncrement": 1000,
+      "bidCount": 3,
+      "bidHistory": [
+        {
+          "id": "b-1792861885279-mtys",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 36000,
+          "time": "Just now",
+          "timestamp": 1792861885279
+        },
+        {
+          "id": "b-1792861884870-nn5r",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792861884870
+        },
+        {
+          "id": "b-1792861884868-2s9x",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792861884868
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792861874748,
+      "endTimestamp": 1792865484748,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792861574861",
+      "productId": "prod-test-1792861574861",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 36000,
+      "minIncrement": 1000,
+      "bidCount": 3,
+      "bidHistory": [
+        {
+          "id": "b-1792861575385-a9uz",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 36000,
+          "time": "Just now",
+          "timestamp": 1792861575385
+        },
+        {
+          "id": "b-1792861574974-37yt",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792861574974
+        },
+        {
+          "id": "b-1792861574973-sxup",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792861574973
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792861564861,
+      "endTimestamp": 1792865174861,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792861187252",
+      "productId": "prod-test-1792861187252",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 36000,
+      "minIncrement": 1000,
+      "bidCount": 3,
+      "bidHistory": [
+        {
+          "id": "b-1792861187818-1aq7",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 36000,
+          "time": "Just now",
+          "timestamp": 1792861187818
+        },
+        {
+          "id": "b-1792861187417-1yo2",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792861187417
+        },
+        {
+          "id": "b-1792861187415-1vrd",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792861187415
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792861177252,
+      "endTimestamp": 1792864787252,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792861005864",
+      "productId": "prod-test-1792861005864",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 23000,
+      "minIncrement": 1000,
+      "bidCount": 2,
+      "bidHistory": [
+        {
+          "id": "b-1792861006025-jgi0",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792861006025
+        },
+        {
+          "id": "b-1792861006023-5a1o",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792861006023
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792860995864,
+      "endTimestamp": 1792864605864,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792859783184",
+      "productId": "prod-test-1792859783184",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 23000,
+      "minIncrement": 1000,
+      "bidCount": 2,
+      "bidHistory": [
+        {
+          "id": "b-1792859783375-yw34",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792859783375
+        },
+        {
+          "id": "b-1792859783372-wlww",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792859783372
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792859773184,
+      "endTimestamp": 1792863383184,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
       "id": "auc-lot-1792830630677",
       "productId": "prod-1792830630677",
       "type": "auction",
@@ -824,17 +1033,26 @@
       "location": "Chandigarh, India",
       "category": "Handmade",
       "startingBid": 8100,
-      "currentBid": 8100,
+      "currentBid": 8500,
       "estimatedValue": 45000,
       "minIncrement": 400,
       "reservePrice": null,
-      "bidCount": 0,
-      "bidHistory": [],
+      "bidCount": 1,
+      "bidHistory": [
+        {
+          "id": "b-1792856229793-icsg",
+          "bidder": "Geetha",
+          "bidderId": "680b84ae-d8f1-4198-8b52-c0805049aec9",
+          "amount": 8500,
+          "time": "Just now",
+          "timestamp": 1792856229793
+        }
+      ],
       "startTimestamp": 1792845000000,
       "scheduledTimestamp": 1792845000000,
       "endTimestamp": 1792942200000,
       "endTime": 1792942200000,
-      "remainingSeconds": 90114,
+      "remainingSeconds": 85970,
       "approvalStatus": "approved",
       "status": "active",
       "winner": null,
@@ -1217,7 +1435,7 @@
       "startTimestamp": 1792995092859,
       "endTimestamp": 1793254292859,
       "endTime": 1793254292859,
-      "remainingSeconds": 164191,
+      "remainingSeconds": 138863,
       "winner": null,
       "bidHistory": []
     },
@@ -1242,7 +1460,7 @@
       "startTimestamp": 1793167892859,
       "endTimestamp": 1793427092859,
       "endTime": 1793427092859,
-      "remainingSeconds": 336991,
+      "remainingSeconds": 311663,
       "winner": null,
       "bidHistory": []
     },
@@ -1267,7 +1485,7 @@
       "startTimestamp": 1793340692859,
       "endTimestamp": 1793599892859,
       "endTime": 1793599892859,
-      "remainingSeconds": 509791,
+      "remainingSeconds": 484463,
       "winner": null,
       "bidHistory": []
     },
@@ -1292,7 +1510,7 @@
       "startTimestamp": 1793513492859,
       "endTimestamp": 1793772692859,
       "endTime": 1793772692859,
-      "remainingSeconds": 682591,
+      "remainingSeconds": 657263,
       "winner": null,
       "bidHistory": []
     }
@@ -1302,5 +1520,68 @@
   ],
   "registrations": [
     "up-1"
-  ]
+  ],
+  "autoBids": [
+    {
+      "id": "ab-1792859783316-h0s1",
+      "auctionId": "auc-socket-test-1792859783184",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "active",
+      "createdAt": 1792859783316,
+      "updatedAt": 1792859783316
+    },
+    {
+      "id": "ab-1792861005982-i6b1",
+      "auctionId": "auc-socket-test-1792861005864",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "active",
+      "createdAt": 1792861005982,
+      "updatedAt": 1792861005982
+    },
+    {
+      "id": "ab-1792861187358-9qpr",
+      "auctionId": "auc-socket-test-1792861187252",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "budget_reached",
+      "createdAt": 1792861187358,
+      "updatedAt": 1792861187838
+    },
+    {
+      "id": "ab-1792861574939-9bgu",
+      "auctionId": "auc-socket-test-1792861574861",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "budget_reached",
+      "createdAt": 1792861574939,
+      "updatedAt": 1792861575407
+    },
+    {
+      "id": "ab-1792861884836-qt0v",
+      "auctionId": "auc-socket-test-1792861884748",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "budget_reached",
+      "createdAt": 1792861884836,
+      "updatedAt": 1792861885301
+    }
+  ],
+  "messages": []
 }

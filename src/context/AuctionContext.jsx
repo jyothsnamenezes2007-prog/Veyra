@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { io } from 'socket.io-client';
 import {
   INITIAL_LIVE_AUCTIONS,
   UPCOMING_AUCTIONS,
@@ -19,6 +20,7 @@ const AUCTION_COMMENTS_KEY = 'veyra_auction_comments';
 
 export const AuctionProvider = ({ children }) => {
   const { addToast } = useToast();
+  const [socket, setSocket] = useState(null);
 
   // 1. Base Demo / Live Auctions state
   const [liveAuctions, setLiveAuctions] = useState(() => {
@@ -202,6 +204,85 @@ export const AuctionProvider = ({ children }) => {
   useEffect(() => {
     syncWithServer();
   }, [syncWithServer]);
+
+  // Real-time primary communication via Socket.IO
+  useEffect(() => {
+    let s = null;
+    try {
+      s = io({
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000
+      });
+
+      s.on('bid_update', (payload) => {
+        if (!payload || !payload.auctionId) return;
+        const { auctionId, updatedAuction } = payload;
+        setLiveAuctions((prev) =>
+          prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+        );
+        setCustomAuctions((prev) =>
+          prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+        );
+      });
+
+      s.on('status_change', ({ type, auction }) => {
+        if (!auction) return;
+        if (type === 'AUCTION_STARTED') {
+          setLiveAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+          );
+          setCustomAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+          );
+        } else if (type === 'AUCTION_ENDED') {
+          setLiveAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+          );
+          setCustomAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+          );
+        }
+      });
+
+      s.on('new_message', (msg) => {
+        if (!msg || !msg.auctionId) return;
+        setComments((prev) => {
+          const list = prev[msg.auctionId] || [];
+          if (list.some((m) => m.id === msg.id)) return prev;
+          return {
+            ...prev,
+            [msg.auctionId]: [
+              ...list,
+              {
+                id: msg.id,
+                user: msg.sender,
+                message: msg.text,
+                time: msg.time || 'Just now',
+                timestamp: msg.timestamp || Date.now()
+              }
+            ]
+          };
+        });
+      });
+
+      s.on('autobid_status_update', (data) => {
+        if (data.status === 'budget_reached') {
+          addToast(data.message || 'Auto-bid ceiling reached.', 'info');
+        }
+      });
+
+      setSocket(s);
+    } catch (e) {
+      console.warn('Socket.IO connection failed:', e);
+    }
+
+    return () => {
+      if (s) s.disconnect();
+    };
+  }, [addToast]);
+
 
   // Real-time server push events via EventSource (SSE)
   useEffect(() => {
@@ -1121,14 +1202,91 @@ export const AuctionProvider = ({ children }) => {
     [addToast]
   );
 
+  
+  // Auto-bid management methods
+  const getAutoBidConfig = useCallback(async (auctionId, userId) => {
+    if (!auctionId || !userId) return null;
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/autobid?userId=${encodeURIComponent(userId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return data.config || null;
+      }
+    } catch (e) {}
+    return null;
+  }, []);
+
+  const saveAutoBidConfig = useCallback(
+    async (auctionId, config) => {
+      try {
+        const res = await fetch(`/api/auctions/${auctionId}/autobid`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        const data = await res.json();
+        if (data.success) {
+          addToast(data.message || 'Auto-bid agent configured and active.');
+          return { success: true, config: data.config };
+        }
+        return { success: false, error: data.error };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    },
+    [addToast]
+  );
+
+  const disableAutoBid = useCallback(
+    async (auctionId, userId) => {
+      try {
+        const res = await fetch(`/api/auctions/${auctionId}/autobid?userId=${encodeURIComponent(userId)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (data.success) {
+          addToast('Auto-bid agent disabled.');
+          return { success: true };
+        }
+        return { success: false, error: data.error };
+      } catch (e) {
+        return { success: false, error: e.message };
+      }
+    },
+    [addToast]
+  );
+
+  const loadAuctionMessages = useCallback(async (auctionId) => {
+    if (!auctionId) return;
+    try {
+      const res = await fetch(`/api/auctions/${auctionId}/messages`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.messages)) {
+          setComments((prev) => ({
+            ...prev,
+            [auctionId]: data.messages.map((m) => ({
+              id: m.id,
+              user: m.sender,
+              message: m.text,
+              time: m.time,
+              timestamp: m.timestamp
+            }))
+          }));
+        }
+      }
+    } catch (e) {}
+  }, []);
+
   // Comments
-  const sendAuctionComment = (auctionId, message, userName = 'Collector') => {
+    const sendAuctionComment = (auctionId, message, userName = 'Collector', userId = 'user-current') => {
     if (!message || !message.trim()) return;
+    const text = message.trim();
 
     const newComment = {
       id: 'c-' + Date.now(),
       user: userName,
-      message: message.trim(),
+      message: text,
       time: 'Just now',
       timestamp: Date.now()
     };
@@ -1137,6 +1295,18 @@ export const AuctionProvider = ({ children }) => {
       ...prev,
       [auctionId]: [...(prev[auctionId] || []), newComment]
     }));
+
+    if (socket && socket.connected) {
+      socket.emit('send_message', { auctionId, text, sender: userName, userId });
+    } else {
+      try {
+        fetch(`/api/auctions/${auctionId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, sender: userName, userId })
+        }).catch(() => {});
+      } catch (e) {}
+    }
 
     if (typeof BroadcastChannel !== 'undefined') {
       try {
@@ -1220,6 +1390,11 @@ export const AuctionProvider = ({ children }) => {
         placeBid,
         comments,
         sendAuctionComment,
+        getAutoBidConfig,
+        saveAutoBidConfig,
+        disableAutoBid,
+        loadAuctionMessages,
+        socket,
         isRegistered,
         toggleRegistration,
         registrations,

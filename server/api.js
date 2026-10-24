@@ -7,9 +7,22 @@ import {
   getProductById,
   insertProduct,
   updateProduct,
-  saveDatabase
+  saveDatabase,
+  getAutoBids,
+  getUserAutoBid,
+  upsertAutoBid,
+  deleteUserAutoBid,
+  getAuctionMessages,
+  insertAuctionMessage,
+  seedDemoData
 } from './db.js';
 import { scheduler } from './scheduler.js';
+import {
+  broadcastBidUpdate,
+  broadcastAuctionStatus,
+  triggerAutoBidLoop,
+  getIO
+} from './socket.js';
 
 // Connected SSE clients
 const sseClients = new Set();
@@ -17,7 +30,7 @@ const sseClients = new Set();
 // In-memory mutex locks for bidding to prevent race conditions
 const auctionLocks = new Map();
 
-async function withAuctionLock(auctionId, fn) {
+export async function withAuctionLock(auctionId, fn) {
   let prevPromise = auctionLocks.get(auctionId) || Promise.resolve();
   let release;
   const currentPromise = new Promise((resolve) => {
@@ -48,9 +61,14 @@ export function broadcastSSE(type, payload) {
   }
 }
 
-// Hook scheduler events to SSE broadcast
+// Hook scheduler events to SSE and Socket.IO broadcast
 scheduler.on('event', ({ type, payload }) => {
   broadcastSSE(type, payload);
+  if (payload?.auction) {
+    try {
+      broadcastAuctionStatus(type, payload.auction);
+    } catch (e) {}
+  }
 });
 
 // Helper to parse JSON body from incoming Node request
@@ -60,7 +78,6 @@ function parseJsonBody(req) {
     req.on('data', (chunk) => {
       body += chunk;
       if (body.length > 5 * 1024 * 1024) {
-        // 5MB limit
         reject(new Error('Request payload too large'));
       }
     });
@@ -313,7 +330,6 @@ export async function handleApiRequest(req, res) {
     const now = Date.now();
     const start = auction.startTimestamp || auction.scheduledTimestamp || 0;
 
-    // Safety policy: If scheduled start time is in the past, do not silently activate or accept backdated bids!
     if (now >= start) {
       sendJson(res, 400, {
         success: false,
@@ -331,7 +347,6 @@ export async function handleApiRequest(req, res) {
       remainingSeconds: Math.max(0, Math.floor((start - now) / 1000))
     });
 
-    // Also update associated product
     updateProduct(auction.productId, { listingStatus: 'active' });
 
     broadcastSSE('AUCTION_APPROVED', { auction: updated });
@@ -533,17 +548,30 @@ export async function handleApiRequest(req, res) {
           bidHistory: updatedHistory
         });
 
+        // Broadcast to both SSE and Socket.IO
         broadcastSSE('BID_PLACED', {
           auctionId: id,
           updatedAuction: updated,
           bid: newBid
         });
 
+        try {
+          broadcastBidUpdate(id, updated, newBid);
+        } catch (e) {}
+
         sendJson(res, 200, {
           success: true,
           auction: updated,
           bid: newBid
         });
+
+        // Trigger agentic auto-bid loop asynchronously under lock
+        setTimeout(() => {
+          withAuctionLock(id, () => triggerAutoBidLoop(id)).catch((e) => {
+            console.error('[AutoBid Background Error]:', e);
+          });
+        }, 100);
+
         return true;
       } catch (err) {
         sendJson(res, 500, { success: false, error: err.message });
@@ -552,7 +580,170 @@ export async function handleApiRequest(req, res) {
     });
   }
 
-  // 10. GET /api/products
+  // 10. GET /api/auctions/:id/autobid
+  const autoBidGetMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/autobid$/);
+  if (autoBidGetMatch && method === 'GET') {
+    const id = autoBidGetMatch[1];
+    const userId = url.searchParams.get('userId');
+    if (!userId) {
+      sendJson(res, 400, { success: false, error: 'User ID is required to fetch confidential auto-bid settings.' });
+      return true;
+    }
+    const config = getUserAutoBid(id, userId);
+    sendJson(res, 200, { success: true, config });
+    return true;
+  }
+
+  // 11. POST /api/auctions/:id/autobid
+  const autoBidPostMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/autobid$/);
+  if (autoBidPostMatch && method === 'POST') {
+    try {
+      const id = autoBidPostMatch[1];
+      const auction = getAuctionById(id);
+      if (!auction) {
+        sendJson(res, 404, { success: false, error: 'Auction lot not found.' });
+        return true;
+      }
+
+      const data = await parseJsonBody(req);
+      const userId = data.userId;
+      if (!userId) {
+        sendJson(res, 400, { success: false, error: 'User ID is required to configure auto-bid agent.' });
+        return true;
+      }
+
+      if (auction.sellerId && auction.sellerId === userId) {
+        sendJson(res, 403, { success: false, error: 'Sellers cannot activate auto-bidding on their own listings.' });
+        return true;
+      }
+
+      const maxBudget = Number(data.maxBudget);
+      if (isNaN(maxBudget) || maxBudget <= 0) {
+        sendJson(res, 400, { success: false, error: 'Valid maximum budget amount in INR is required.' });
+        return true;
+      }
+
+      const minRequired = auction.currentBid + (auction.bidCount > 0 ? (auction.minIncrement || 500) : 0);
+      if (maxBudget < minRequired) {
+        sendJson(res, 400, {
+          success: false,
+          error: `Maximum budget must be at least the next minimum bid of ₹${minRequired.toLocaleString('en-IN')}.`
+        });
+        return true;
+      }
+
+      const preferredIncrement = Number(data.preferredIncrement) || auction.minIncrement || 500;
+      if (preferredIncrement <= 0) {
+        sendJson(res, 400, { success: false, error: 'Preferred increment must be a positive number.' });
+        return true;
+      }
+
+      const enabled = data.enabled !== false;
+
+      const saved = upsertAutoBid({
+        auctionId: id,
+        userId: userId,
+        bidderName: data.bidderName || 'Collector',
+        maxBudget: maxBudget,
+        preferredIncrement: preferredIncrement,
+        enabled: enabled,
+        status: enabled ? 'active' : 'disabled'
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        config: saved,
+        message: enabled ? 'Auto-bid agent configured and active.' : 'Auto-bid agent updated.'
+      });
+
+      // If active and auction is live, evaluate right away
+      if (enabled && (auction.status === 'active' || auction.status === 'live')) {
+        setTimeout(() => {
+          withAuctionLock(id, () => triggerAutoBidLoop(id)).catch((e) => {
+            console.error('[AutoBid Trigger Error]:', e);
+          });
+        }, 100);
+      }
+
+      return true;
+    } catch (err) {
+      sendJson(res, 500, { success: false, error: err.message });
+      return true;
+    }
+  }
+
+  // 12. DELETE /api/auctions/:id/autobid
+  const autoBidDelMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/autobid$/);
+  if (autoBidDelMatch && method === 'DELETE') {
+    const id = autoBidDelMatch[1];
+    const userId = url.searchParams.get('userId');
+    if (!userId) {
+      sendJson(res, 400, { success: false, error: 'User ID is required.' });
+      return true;
+    }
+
+    const removed = deleteUserAutoBid(id, userId);
+    sendJson(res, 200, { success: true, message: 'Auto-bid agent disabled and removed.', removed });
+    return true;
+  }
+
+  // 13. GET /api/auctions/:id/messages
+  const msgGetMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/messages$/);
+  if (msgGetMatch && method === 'GET') {
+    const id = msgGetMatch[1];
+    const messages = getAuctionMessages(id);
+    sendJson(res, 200, { success: true, messages });
+    return true;
+  }
+
+  // 14. POST /api/auctions/:id/messages
+  const msgPostMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/messages$/);
+  if (msgPostMatch && method === 'POST') {
+    try {
+      const id = msgPostMatch[1];
+      const data = await parseJsonBody(req);
+
+      if (!data.text || !data.text.trim()) {
+        sendJson(res, 400, { success: false, error: 'Message text is required.' });
+        return true;
+      }
+
+      const trimmed = data.text.trim();
+      if (trimmed.length > 500) {
+        sendJson(res, 400, { success: false, error: 'Message cannot exceed 500 characters.' });
+        return true;
+      }
+
+      const record = insertAuctionMessage({
+        auctionId: id,
+        userId: data.userId || 'anonymous',
+        sender: data.sender || 'Collector',
+        text: trimmed
+      });
+
+      // Broadcast via Socket.IO
+      try {
+        const io = getIO();
+        if (io) io.to(`auction:${id}`).emit('new_message', record);
+      } catch (e) {}
+
+      sendJson(res, 201, { success: true, message: record });
+      return true;
+    } catch (err) {
+      sendJson(res, 500, { success: false, error: err.message });
+      return true;
+    }
+  }
+
+  // 15. POST /api/seed-demo (Explicitly seed development demo lots)
+  if (pathname === '/api/seed-demo' && method === 'POST') {
+    const seeded = seedDemoData();
+    saveDatabase();
+    sendJson(res, 200, { success: true, message: 'Demo data seeded successfully.', seeded });
+    return true;
+  }
+
+  // 16. GET /api/products
   if (pathname === '/api/products' && method === 'GET') {
     const products = getProducts();
     sendJson(res, 200, {
@@ -563,7 +754,7 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
-  // 11. POST /api/products (Create normal shop product)
+  // 17. POST /api/products (Create normal shop product)
   if (pathname === '/api/products' && method === 'POST') {
     try {
       const data = await parseJsonBody(req);
@@ -617,7 +808,7 @@ export async function handleApiRequest(req, res) {
     }
   }
 
-  // 12. POST /api/products/:id/approve
+  // 18. POST /api/products/:id/approve
   const prodApproveMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)\/approve$/);
   if (prodApproveMatch && method === 'POST') {
     const id = prodApproveMatch[1];
@@ -633,7 +824,7 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
-  // 13. POST /api/products/:id/reject
+  // 19. POST /api/products/:id/reject
   const prodRejectMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)\/reject$/);
   if (prodRejectMatch && method === 'POST') {
     const id = prodRejectMatch[1];

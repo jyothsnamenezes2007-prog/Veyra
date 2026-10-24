@@ -17,21 +17,7 @@ if (!fs.existsSync(DATA_DIR)) {
 let dbCache = null;
 let saveQueue = Promise.resolve();
 
-export function initDatabase() {
-  if (dbCache) return dbCache;
-
-  if (fs.existsSync(DB_PATH)) {
-    try {
-      const raw = fs.readFileSync(DB_PATH, 'utf8');
-      dbCache = JSON.parse(raw);
-      console.log(`[Veyra DB] Loaded database with ${dbCache.auctions?.length || 0} auctions, ${dbCache.products?.length || 0} products.`);
-      return dbCache;
-    } catch (err) {
-      console.warn('[Veyra DB] Failed to parse db.json, re-initializing from defaults:', err);
-    }
-  }
-
-  // Seed default data
+export function seedDemoData() {
   const now = Date.now();
   const seededProducts = PRODUCTS.map((p) => ({
     ...p,
@@ -80,15 +66,52 @@ export function initDatabase() {
     })
   ];
 
-  dbCache = {
+  return {
     products: seededProducts,
     auctions: seededAuctions,
+    autoBids: [],
+    messages: [],
     reminders: ['up-2'],
     registrations: ['up-1']
   };
+}
 
+export function initDatabase() {
+  if (dbCache) return dbCache;
+
+  if (fs.existsSync(DB_PATH)) {
+    try {
+      const raw = fs.readFileSync(DB_PATH, 'utf8');
+      dbCache = JSON.parse(raw);
+      if (!Array.isArray(dbCache.autoBids)) dbCache.autoBids = [];
+      if (!Array.isArray(dbCache.messages)) dbCache.messages = [];
+      console.log(`[Veyra DB] Loaded database with ${dbCache.auctions?.length || 0} auctions, ${dbCache.products?.length || 0} products.`);
+      return dbCache;
+    } catch (err) {
+      console.warn('[Veyra DB] Failed to parse db.json, re-initializing from defaults:', err);
+    }
+  }
+
+  // Production vs Dev/Demo initialization
+  const isProd = process.env.NODE_ENV === 'production' && process.env.ENABLE_DEMO_DATA !== 'true';
+  if (isProd) {
+    dbCache = {
+      products: [],
+      auctions: [],
+      autoBids: [],
+      messages: [],
+      reminders: [],
+      registrations: []
+    };
+    persistDatabaseSync();
+    console.log('[Veyra DB] Initialized clean production database (empty catalog).');
+    return dbCache;
+  }
+
+  // Development/Demo seed data
+  dbCache = seedDemoData();
   persistDatabaseSync();
-  console.log('[Veyra DB] Initialized and seeded fresh db.json.');
+  console.log('[Veyra DB] Initialized and seeded fresh db.json with demo lots.');
   return dbCache;
 }
 
@@ -168,4 +191,89 @@ export function updateProduct(id, updates) {
   db.products[index] = { ...db.products[index], ...updates };
   saveDatabase();
   return db.products[index];
+}
+
+// Auto-Bid operations (confidential user settings stored server-side only)
+export function getAutoBids(auctionId) {
+  const db = getDatabase();
+  if (!Array.isArray(db.autoBids)) db.autoBids = [];
+  return db.autoBids.filter((ab) => ab.auctionId === auctionId);
+}
+
+export function getUserAutoBid(auctionId, userId) {
+  const db = getDatabase();
+  if (!Array.isArray(db.autoBids)) db.autoBids = [];
+  return db.autoBids.find((ab) => ab.auctionId === auctionId && ab.userId === userId) || null;
+}
+
+export function upsertAutoBid(config) {
+  const db = getDatabase();
+  if (!Array.isArray(db.autoBids)) db.autoBids = [];
+  const index = db.autoBids.findIndex((ab) => ab.auctionId === config.auctionId && ab.userId === config.userId);
+  const now = Date.now();
+  if (index !== -1) {
+    db.autoBids[index] = {
+      ...db.autoBids[index],
+      ...config,
+      updatedAt: now
+    };
+    saveDatabase();
+    return db.autoBids[index];
+  } else {
+    const newConfig = {
+      id: 'ab-' + now + '-' + Math.random().toString(36).slice(2, 6),
+      ...config,
+      createdAt: now,
+      updatedAt: now
+    };
+    db.autoBids.push(newConfig);
+    saveDatabase();
+    return newConfig;
+  }
+}
+
+export function updateAutoBid(id, updates) {
+  const db = getDatabase();
+  if (!Array.isArray(db.autoBids)) db.autoBids = [];
+  const index = db.autoBids.findIndex((ab) => ab.id === id);
+  if (index === -1) return null;
+  db.autoBids[index] = { ...db.autoBids[index], ...updates, updatedAt: Date.now() };
+  saveDatabase();
+  return db.autoBids[index];
+}
+
+export function deleteUserAutoBid(auctionId, userId) {
+  const db = getDatabase();
+  if (!Array.isArray(db.autoBids)) db.autoBids = [];
+  const index = db.autoBids.findIndex((ab) => ab.auctionId === auctionId && ab.userId === userId);
+  if (index !== -1) {
+    const removed = db.autoBids.splice(index, 1)[0];
+    saveDatabase();
+    return removed;
+  }
+  return null;
+}
+
+// Auction Messages operations
+export function getAuctionMessages(auctionId) {
+  const db = getDatabase();
+  if (!Array.isArray(db.messages)) db.messages = [];
+  return db.messages.filter((m) => m.auctionId === auctionId).sort((a, b) => a.timestamp - b.timestamp);
+}
+
+export function insertAuctionMessage(message) {
+  const db = getDatabase();
+  if (!Array.isArray(db.messages)) db.messages = [];
+  const record = {
+    id: message.id || ('msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+    auctionId: message.auctionId,
+    userId: message.userId,
+    sender: message.sender,
+    text: message.text,
+    time: message.time || 'Just now',
+    timestamp: message.timestamp || Date.now()
+  };
+  db.messages.push(record);
+  saveDatabase();
+  return record;
 }

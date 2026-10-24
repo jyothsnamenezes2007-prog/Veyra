@@ -2,6 +2,7 @@ import http from 'node:http';
 import { initDatabase } from './db.js';
 import { scheduler } from './scheduler.js';
 import { handleApiRequest } from './api.js';
+import { initSocketIO } from './socket.js';
 
 const PORT = process.env.PORT || 3001;
 
@@ -30,9 +31,12 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Initialize authoritative Socket.IO server engine
+initSocketIO(server);
+
 server.listen(PORT, () => {
   console.log(`[Veyra Server] Running on http://localhost:${PORT}`);
-  console.log(`[Veyra Server] Authoritative auction scheduler is ACTIVE.`);
+  console.log(`[Veyra Server] Authoritative auction scheduler & Socket.IO engine are ACTIVE.`);
 });
 
 // Graceful shutdown

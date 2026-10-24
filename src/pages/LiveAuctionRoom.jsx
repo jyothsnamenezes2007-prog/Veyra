@@ -33,7 +33,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const { liveAuctions, placeBid, comments, sendAuctionComment, getLeaderboard } = useAuctions();
+  const { liveAuctions, placeBid, comments, sendAuctionComment, getLeaderboard, getAutoBidConfig, saveAutoBidConfig, disableAutoBid, loadAuctionMessages, socket } = useAuctions();
   const { products } = useProducts();
   const { user } = useAuth();
   const { isInWishlist, toggleWishlist } = useWishlist();
@@ -52,6 +52,115 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const [chatMessage, setChatMessage] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [callModalOpen, setCallModalOpen] = useState(false);
+
+  // Auto-bid Agent State (Gemini 3.8 Flash)
+  const [autoBidConfig, setAutoBidConfig] = useState(null);
+  const [autoBidBudget, setAutoBidBudget] = useState('');
+  const [incrementPreset, setIncrementPreset] = useState(55); // 55, 60, 65, 70, or 'custom'
+  const [customIncrement, setCustomIncrement] = useState('');
+  const [isEditingAutoBid, setIsEditingAutoBid] = useState(false);
+  const [autoBidError, setAutoBidError] = useState('');
+  const [autoBidLoading, setAutoBidLoading] = useState(false);
+
+  // Synchronize user auto-bid config & messages
+  useEffect(() => {
+    if (auction?.id) {
+      loadAuctionMessages?.(auction.id);
+      if (user?.id && getAutoBidConfig) {
+        getAutoBidConfig(auction.id, user.id).then((cfg) => {
+          if (cfg) {
+            setAutoBidConfig(cfg);
+            setAutoBidBudget(String(cfg.maxBudget));
+            const inc = cfg.preferredIncrement;
+            if ([55, 60, 65, 70].includes(inc)) {
+              setIncrementPreset(inc);
+            } else {
+              setIncrementPreset('custom');
+              setCustomIncrement(String(inc));
+            }
+          } else {
+            setAutoBidConfig(null);
+          }
+        });
+      }
+    }
+  }, [auction?.id, user?.id, getAutoBidConfig, loadAuctionMessages]);
+
+  // Connect to Socket.IO auction room for real-time bid & message updates
+  useEffect(() => {
+    if (socket && auction?.id) {
+      socket.emit('join_auction', {
+        auctionId: auction.id,
+        userId: user?.id,
+        userName: user?.name
+      });
+
+      return () => {
+        socket.emit('leave_auction', { auctionId: auction.id });
+      };
+    }
+  }, [socket, auction?.id, user?.id, user?.name]);
+
+  const handleSaveAutoBid = async (e) => {
+    e.preventDefault();
+    setAutoBidError('');
+
+    if (!user) {
+      navigate('/signin?redirect=' + encodeURIComponent(location.pathname));
+      return;
+    }
+
+    if (auction.sellerId && auction.sellerId === user.id) {
+      setAutoBidError('Sellers are strictly prohibited from bidding on their own listings.');
+      return;
+    }
+
+    const budgetNum = Number(autoBidBudget);
+    if (isNaN(budgetNum) || budgetNum <= 0) {
+      setAutoBidError('Please enter a valid positive budget amount in INR.');
+      return;
+    }
+
+    if (budgetNum < minRequiredBid) {
+      setAutoBidError('Maximum budget must be at least the next minimum bid of ' + formatINR(minRequiredBid) + '.');
+      return;
+    }
+
+    let effectiveIncrement = incrementPreset === 'custom' ? Number(customIncrement) : Number(incrementPreset);
+    if (isNaN(effectiveIncrement) || effectiveIncrement <= 0) {
+      setAutoBidError('Please specify a positive automatic increment amount.');
+      return;
+    }
+
+    setAutoBidLoading(true);
+    const res = await saveAutoBidConfig(auction.id, {
+      userId: user.id,
+      bidderName: user.name,
+      maxBudget: budgetNum,
+      preferredIncrement: effectiveIncrement,
+      enabled: true
+    });
+    setAutoBidLoading(false);
+
+    if (res.success) {
+      setAutoBidConfig(res.config);
+      setIsEditingAutoBid(false);
+      setAutoBidError('');
+    } else {
+      setAutoBidError(res.error || 'Failed to configure auto-bid agent.');
+    }
+  };
+
+  const handleDisableAutoBid = async () => {
+    if (!user || !auction?.id) return;
+    setAutoBidLoading(true);
+    const res = await disableAutoBid(auction.id, user.id);
+    setAutoBidLoading(false);
+    if (res.success) {
+      setAutoBidConfig(null);
+      setIsEditingAutoBid(false);
+    }
+  };
 
   // Sync custom bid when minRequired changes
   useEffect(() => {
@@ -191,7 +300,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
       return;
     }
 
-    sendAuctionComment(auction.id, chatMessage, user.name);
+    sendAuctionComment(auction.id, chatMessage, user.name, user.id);
     setChatMessage('');
   };
 

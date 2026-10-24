@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { PRODUCTS, CATEGORIES } from '../data/products';
 import { useToast } from './ToastContext';
 
@@ -16,6 +16,8 @@ export const ProductsProvider = ({ children }) => {
     }
   });
 
+  const [serverProducts, setServerProducts] = useState(null);
+
   useEffect(() => {
     try {
       localStorage.setItem(CUSTOM_PRODUCTS_KEY, JSON.stringify(customProducts));
@@ -31,28 +33,30 @@ export const ProductsProvider = ({ children }) => {
       .then((res) => res.json())
       .then((data) => {
         if (isMounted && data.success && Array.isArray(data.products)) {
-          const customFromServer = data.products.filter((p) => p.id && String(p.id).startsWith('prod-'));
-          if (customFromServer.length > 0) {
-            setCustomProducts((prev) => {
-              const prevIds = new Set(prev.map((p) => p.id));
-              const merged = [...prev];
-              customFromServer.forEach((p) => {
-                if (!prevIds.has(p.id)) {
-                  merged.unshift(p);
-                }
-              });
-              return merged;
-            });
-          }
+          setServerProducts(data.products);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (isMounted && (!import.meta.env || !import.meta.env.PROD)) {
+          setServerProducts(PRODUCTS);
+        }
+      });
     return () => {
       isMounted = false;
     };
   }, []);
 
-  const allProducts = [...customProducts, ...PRODUCTS];
+  // When server has responded, authoritative catalog is serverProducts.
+  // In production with empty backend, newly registered buyer sees clean empty marketplace.
+  const allProducts = useMemo(() => {
+    if (serverProducts === null) {
+      const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD && !import.meta.env?.VITE_ENABLE_DEMO_DATA;
+      return isProd ? customProducts : [...customProducts, ...PRODUCTS];
+    }
+    const serverIds = new Set(serverProducts.map((p) => p.id));
+    const pendingLocal = customProducts.filter((p) => !serverIds.has(p.id));
+    return [...pendingLocal, ...serverProducts];
+  }, [serverProducts, customProducts]);
 
   const addProduct = useCallback(async (productData) => {
     const isAuction = productData.isAuction === true || productData.type === 'auction';
@@ -76,7 +80,7 @@ export const ProductsProvider = ({ children }) => {
           : [productData.image]
     };
 
-    // Try server persistence
+    // Server persistence
     try {
       fetch('/api/products', {
         method: 'POST',
@@ -99,65 +103,78 @@ export const ProductsProvider = ({ children }) => {
   const getMyProducts = useCallback(
     (userId) => {
       if (!userId) return [];
-      return customProducts.filter((p) => p.sellerId === userId);
+      return allProducts.filter((p) => p.sellerId === userId);
     },
-    [customProducts]
+    [allProducts]
   );
 
-  const updateProductStatus = useCallback((productId, status) => {
-    // Call server endpoint
-    if (status === 'active') {
-      fetch(`/api/products/${productId}/approve`, { method: 'POST' }).catch(() => {});
-    } else if (status === 'rejected') {
-      fetch(`/api/products/${productId}/reject`, { method: 'POST' }).catch(() => {});
-    }
+  const getProductsByCategory = useCallback(
+    (category) => {
+      if (!category || category === 'all') return allProducts;
+      return allProducts.filter(
+        (p) => p.category.toLowerCase() === category.toLowerCase()
+      );
+    },
+    [allProducts]
+  );
 
-    setCustomProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, listingStatus: status } : p))
-    );
+  const approveProduct = useCallback(
+    async (productId) => {
+      try {
+        await fetch(`/api/products/${productId}/approve`, { method: 'POST' });
+      } catch (e) {}
 
-    // Also synchronize status with any corresponding auction in customAuctions
-    try {
-      const savedAuctions = localStorage.getItem('veyra_custom_auctions');
-      if (savedAuctions) {
-        const parsed = JSON.parse(savedAuctions);
-        const now = Date.now();
-        const updated = parsed.map((a) => {
-          if (a.productId === productId || a.id === productId) {
-            const isApproved = status === 'active';
-            const isRejected = status === 'rejected';
-            const newApproval = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
-            const isStarted = now >= (a.scheduledTimestamp || a.startTimestamp || 0);
-            const isEnded = now >= (a.endTimestamp || a.endTime || 0);
-            const newStatus = !isApproved
-              ? newApproval
-              : isEnded
-              ? 'ended'
-              : isStarted
-              ? 'active'
-              : 'scheduled';
-            return { ...a, approvalStatus: newApproval, status: newStatus };
-          }
-          return a;
-        });
-        localStorage.setItem('veyra_custom_auctions', JSON.stringify(updated));
-        window.dispatchEvent(new Event('storage'));
+      setCustomProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId ? { ...p, listingStatus: 'active' } : p
+        )
+      );
+      if (serverProducts) {
+        setServerProducts((prev) =>
+          prev.map((p) =>
+            p.id === productId ? { ...p, listingStatus: 'active' } : p
+          )
+        );
       }
-    } catch (e) {
-      console.warn('Failed to sync auction approval status', e);
-    }
-  }, []);
+      addToast('Listing approved and published to the marketplace.');
+    },
+    [serverProducts, addToast]
+  );
+
+  const rejectProduct = useCallback(
+    async (productId) => {
+      try {
+        await fetch(`/api/products/${productId}/reject`, { method: 'POST' });
+      } catch (e) {}
+
+      setCustomProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId ? { ...p, listingStatus: 'rejected' } : p
+        )
+      );
+      if (serverProducts) {
+        setServerProducts((prev) =>
+          prev.map((p) =>
+            p.id === productId ? { ...p, listingStatus: 'rejected' } : p
+          )
+        );
+      }
+      addToast('Listing rejected.');
+    },
+    [serverProducts, addToast]
+  );
 
   return (
     <ProductsContext.Provider
       value={{
         products: allProducts,
         categories: CATEGORIES,
-        customProducts,
         addProduct,
         getProductById,
         getMyProducts,
-        updateProductStatus
+        getProductsByCategory,
+        approveProduct,
+        rejectProduct
       }}
     >
       {children}

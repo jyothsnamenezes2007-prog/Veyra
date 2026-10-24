@@ -1,6 +1,7 @@
 // VEYRA WebRTC Video & Audio Signaling Service
 // Genuine peer-to-peer real-time communication between authenticated seller & confirmed winning buyer
 
+import { io } from 'socket.io-client';
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
 const ICE_SERVERS = [
@@ -24,8 +25,8 @@ export const RTC_CONFIGURATION = {
 
 /**
  * Creates an authenticated WebRTC signaling channel for an auction call.
- * Uses Supabase Realtime broadcast when configured, and BroadcastChannel/Storage as a robust
- * zero-config local communication channel between tabs/windows.
+ * Uses Socket.IO for server-mediated remote signaling, with BroadcastChannel/Storage
+ * and Supabase Realtime as robust zero-config peer fallbacks.
  */
 export class WebRTCSignaling {
   constructor(auctionId, userId, role) {
@@ -37,7 +38,31 @@ export class WebRTCSignaling {
     this.recentMsgIds = [];
     this.channelName = `veyra_webrtc_call_${auctionId}`;
 
-    // 1. BroadcastChannel for local/multi-tab peer testing
+    // 1. Socket.IO signaling for genuine cross-client peer negotiation
+    if (typeof window !== 'undefined') {
+      try {
+        this.socket = io({
+          transports: ['websocket', 'polling'],
+          reconnection: true
+        });
+
+        this.socket.emit('join_call', {
+          auctionId: this.auctionId,
+          userId: this.userId,
+          role: this.role
+        });
+
+        this.socket.on('webrtc_signal', (payload) => {
+          if (payload && payload.senderId !== this.userId) {
+            this._dispatch(payload);
+          }
+        });
+      } catch (e) {
+        console.warn('Socket.IO signaling unavailable in current environment:', e);
+      }
+    }
+
+    // 2. BroadcastChannel for local/multi-tab peer testing
     if (typeof BroadcastChannel !== 'undefined') {
       this.broadcastChannel = new BroadcastChannel(this.channelName);
       this.broadcastChannel.onmessage = (event) => {
@@ -48,7 +73,7 @@ export class WebRTCSignaling {
       };
     }
 
-    // 2. Storage event fallback for cross-process tab sync
+    // 3. Storage event fallback for cross-process tab sync
     this.storageListener = (event) => {
       if (event.key === this.channelName && event.newValue) {
         try {
@@ -65,7 +90,7 @@ export class WebRTCSignaling {
       window.addEventListener('storage', this.storageListener);
     }
 
-    // 3. Supabase Realtime broadcast channel when credentials exist
+    // 4. Supabase Realtime broadcast channel when credentials exist
     if (isSupabaseConfigured && supabase) {
       this.supabaseChannel = supabase.channel(this.channelName, {
         config: { broadcast: { self: false } }
@@ -89,7 +114,7 @@ export class WebRTCSignaling {
   _dispatch(payload) {
     if (!payload) return;
 
-    // Deduplicate messages across BroadcastChannel, localStorage, and Supabase
+    // Deduplicate messages across Socket.IO, BroadcastChannel, localStorage, and Supabase
     if (payload.msgId) {
       if (this.seenMsgIds.has(payload.msgId)) {
         return; // drop duplicate delivery
@@ -131,7 +156,16 @@ export class WebRTCSignaling {
       this.seenMsgIds.delete(oldest);
     }
 
-    // Broadcast channel
+    // 1. Socket.IO emission
+    if (this.socket && this.socket.connected) {
+      try {
+        this.socket.emit('webrtc_signal', payload);
+      } catch (e) {
+        console.warn('Socket.IO emit error:', e);
+      }
+    }
+
+    // 2. BroadcastChannel
     let broadcastSent = false;
     if (this.broadcastChannel) {
       try {
@@ -142,7 +176,7 @@ export class WebRTCSignaling {
       }
     }
 
-    // Storage fallback only if BroadcastChannel is not available
+    // 3. Storage fallback only if BroadcastChannel is not available
     if (!broadcastSent && typeof window !== 'undefined') {
       try {
         localStorage.setItem(this.channelName, JSON.stringify(payload));
@@ -151,7 +185,7 @@ export class WebRTCSignaling {
       }
     }
 
-    // Supabase Realtime Broadcast
+    // 4. Supabase Realtime Broadcast
     if (this.supabaseChannel) {
       try {
         this.supabaseChannel.send({
@@ -169,6 +203,18 @@ export class WebRTCSignaling {
     this.listeners.clear();
     this.seenMsgIds.clear();
     this.recentMsgIds = [];
+
+    if (this.socket) {
+      try {
+        this.socket.emit('leave_call', {
+          auctionId: this.auctionId,
+          userId: this.userId,
+          role: this.role
+        });
+        this.socket.disconnect();
+      } catch (e) {}
+    }
+
     if (this.broadcastChannel) {
       this.broadcastChannel.close();
     }
