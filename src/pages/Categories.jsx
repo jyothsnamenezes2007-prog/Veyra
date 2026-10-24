@@ -1,9 +1,18 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Compass, Sparkles } from 'lucide-react';
+import { ArrowRight, Compass, Sparkles, Hammer } from 'lucide-react';
 import { CATEGORIES } from '../data/products';
 
 export const Categories = () => {
+  // Maps category IDs to the exact auction category names used in the auction data
+  const categoryNameMap = {
+    'art-prints': 'Art & Prints',
+    'handmade': 'Handmade',
+    'home-living': 'Home & Living',
+    'fashion': 'Fashion & Accessories',
+    'collectibles': 'Collectibles',
+    'vintage': 'Vintage Finds'
+  };
   const categoryShowcase = [
     {
       id: 'art-prints',
@@ -177,6 +186,18 @@ export const Categories = () => {
                     ))}
                   </div>
                 </div>
+
+                <Link
+                  to={`/live-auctions?category=${encodeURIComponent(categoryNameMap[cat.id] || cat.name)}`}
+                  className="btn btn-burgundy"
+                  style={{ width: '100%', justifyContent: 'space-between', height: '40px', fontSize: '13px', marginBottom: '10px' }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Hammer size={14} />
+                    <span>Explore Auctions</span>
+                  </span>
+                  <ArrowRight size={14} />
+                </Link>
 
                 <Link
                   to={`/shop?category=${cat.id}`}

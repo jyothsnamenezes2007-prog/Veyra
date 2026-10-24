@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Clock,
   Hammer,
@@ -18,9 +18,12 @@ import { AdminAuctionControls } from '../components/AdminAuctionControls';
 export const LiveAuctions = () => {
   const { liveAuctions } = useAuctions();
   const { isInWishlist, toggleWishlist } = useWishlist();
+  const [searchParams] = useSearchParams();
 
   // Independent Live Auctions Filter State
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  // Initialize category from URL ?category= param (e.g. from Categories page "Explore Auctions" button)
+  const initialCategory = searchParams.get('category') || 'all';
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [bidRange, setBidRange] = useState('all'); // 'all', 'under-60k', '60k-100k', 'above-100k'
   const [activityFilter, setActivityFilter] = useState('all'); // 'all', 'high-activity'
   const [selectedSeller, setSelectedSeller] = useState('all');
