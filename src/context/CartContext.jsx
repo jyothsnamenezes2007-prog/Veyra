@@ -1,13 +1,45 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useToast } from './ToastContext';
+import { useAuth } from './AuthContext';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const CartContext = createContext(null);
 const CART_STORAGE_KEY = 'veyra_cart_items';
 const ORDERS_STORAGE_KEY = 'veyra_user_orders';
 const RECENTLY_VIEWED_KEY = 'veyra_recently_viewed';
 
+const isUuid = (str) =>
+  typeof str === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+const mapDbOrder = (row) => ({
+  id: row.order_number || row.id,
+  dbId: row.id,
+  date: new Date(row.created_at).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  }),
+  items: (row.order_items || []).map((i) => ({
+    id: i.product_id || i.id,
+    name: i.name,
+    price: Number(i.price),
+    quantity: Number(i.quantity),
+    seller: i.seller_name || '',
+    image: i.image || ''
+  })),
+  subtotal: Number(row.subtotal),
+  shipping: Number(row.shipping),
+  total: Number(row.total),
+  status: row.status || 'Confirmed',
+  trackingNumber: row.tracking_number || '',
+  carrier: row.carrier || 'Veyra White-Glove Insured Logistics',
+  isDatabase: true
+});
+
 export const CartProvider = ({ children }) => {
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   const [items, setItems] = useState(() => {
     try {
@@ -23,7 +55,6 @@ export const CartProvider = ({ children }) => {
     try {
       const saved = localStorage.getItem(ORDERS_STORAGE_KEY);
       return saved ? JSON.parse(saved) : [
-        // Seed an initial order for authentic collector feel
         {
           id: 'VY-749102',
           date: '14 Oct 2026',
@@ -58,6 +89,41 @@ export const CartProvider = ({ children }) => {
       return [];
     }
   });
+
+  // Sync orders with Supabase when authenticated
+  const fetchSupabaseOrders = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase || !user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_items (*)
+        `)
+        .eq('buyer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const mapped = data.map(mapDbOrder);
+        setOrders((prev) => {
+          const map = new Map();
+          // Database orders take priority
+          mapped.forEach((o) => map.set(o.id, o));
+          // Keep initial demo orders if not in DB
+          prev.forEach((o) => {
+            if (!map.has(o.id)) map.set(o.id, o);
+          });
+          return Array.from(map.values());
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch orders from Supabase:', err);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchSupabaseOrders();
+  }, [fetchSupabaseOrders]);
 
   useEffect(() => {
     try {
@@ -123,18 +189,62 @@ export const CartProvider = ({ children }) => {
   };
 
   // Place a completed order
-  const createOrder = (orderData) => {
+  const createOrder = async (orderData) => {
+    const orderNumber = 'VY-' + Math.floor(100000 + Math.random() * 900000);
+    const trackingNumber = 'VY-IN-' + Math.floor(1000000 + Math.random() * 9000000);
+
     const newOrder = {
-      id: 'VY-' + Math.floor(100000 + Math.random() * 900000),
+      id: orderNumber,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
       status: 'Confirmed',
-      carrier: 'Veyra White-Glove Insured Transport',
-      trackingNumber: 'VY-IN-' + Math.floor(1000000 + Math.random() * 9000000),
+      carrier: 'Veyra White-Glove Insured Logistics',
+      trackingNumber,
       ...orderData
     };
 
     setOrders((prev) => [newOrder, ...prev]);
     clearCart();
+
+    // If Supabase configured and user is authenticated, persist order & order_items
+    if (isSupabaseConfigured && supabase && user?.id) {
+      try {
+        const { data: dbOrder, error: orderErr } = await supabase
+          .from('orders')
+          .insert({
+            order_number: orderNumber,
+            buyer_id: user.id,
+            subtotal: Number(orderData.subtotal) || 0,
+            shipping: Number(orderData.shipping) || 0,
+            total: Number(orderData.total) || 0,
+            status: 'Confirmed',
+            carrier: 'Veyra White-Glove Insured Logistics',
+            tracking_number: trackingNumber,
+            shipping_address: orderData.shippingAddress || null
+          })
+          .select()
+          .single();
+
+        if (orderErr) {
+          console.warn('Supabase order creation warning:', orderErr.message);
+        } else if (dbOrder && Array.isArray(orderData.items) && orderData.items.length > 0) {
+          const itemsPayload = orderData.items.map((i) => ({
+            order_id: dbOrder.id,
+            product_id: isUuid(i.id) ? i.id : null,
+            name: i.name,
+            price: Number(i.price),
+            quantity: Number(i.quantity) || 1,
+            seller_name: i.seller || '',
+            image: i.image || ''
+          }));
+
+          await supabase.from('order_items').insert(itemsPayload);
+          fetchSupabaseOrders();
+        }
+      } catch (err) {
+        console.warn('Failed to insert order into Supabase:', err);
+      }
+    }
+
     return newOrder;
   };
 

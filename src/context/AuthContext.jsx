@@ -85,6 +85,20 @@ export const AuthProvider = ({ children }) => {
     };
   };
 
+  // Fetch profile from public.profiles table if available
+  const fetchDbProfile = async (userId) => {
+    if (!isSupabaseConfigured || !supabase || !userId) return null;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!error && data) return data;
+    } catch (e) {}
+    return null;
+  };
+
   // Restore session and subscribe to auth changes
   useEffect(() => {
     let mounted = true;
@@ -99,6 +113,11 @@ export const AuthProvider = ({ children }) => {
         if (initialSession) {
           setSession(initialSession);
           setUser(mapSupabaseUser(initialSession.user));
+          fetchDbProfile(initialSession.user.id).then((prof) => {
+            if (prof && mounted) {
+              setUser((prev) => prev ? { ...prev, name: prof.full_name || prev.name, username: prof.username || prev.username, phone: prof.phone || prev.phone, role: prof.role || prev.role, studio: prof.studio || prev.studio, isProfileIncomplete: !prof.full_name } : prev);
+            }
+          });
         } else {
           // If no Supabase session, check if there was a local active user
           const savedDemo = localStorage.getItem(DEMO_USER_STORAGE_KEY);
@@ -133,6 +152,11 @@ export const AuthProvider = ({ children }) => {
         }
         if (currentSession?.user) {
           setUser(mapSupabaseUser(currentSession.user));
+          fetchDbProfile(currentSession.user.id).then((prof) => {
+            if (prof && mounted) {
+              setUser((prev) => prev ? { ...prev, name: prof.full_name || prev.name, username: prof.username || prev.username, phone: prof.phone || prev.phone, role: prof.role || prev.role, studio: prof.studio || prev.studio, isProfileIncomplete: !prof.full_name } : prev);
+            }
+          });
           localStorage.removeItem(DEMO_USER_STORAGE_KEY);
         } else {
           setUser(null);
@@ -464,7 +488,18 @@ export const AuthProvider = ({ children }) => {
 
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.auth.updateUser({
+        if (user?.id) {
+        try {
+          await supabase.from('profiles').update({
+            full_name: updates.name || user?.name,
+            username: updates.username !== undefined ? updates.username : user?.username,
+            phone: updates.phone !== undefined ? updates.phone : user?.phone,
+            studio: updates.studio !== undefined ? updates.studio : user?.studio,
+            updated_at: new Date().toISOString()
+          }).eq('id', user.id);
+        } catch (e) {}
+      }
+      await supabase.auth.updateUser({
           data: {
             full_name: updates.name || user?.name,
             name: updates.name || user?.name,
