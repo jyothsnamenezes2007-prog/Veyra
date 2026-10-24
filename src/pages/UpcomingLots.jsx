@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Calendar,
   Clock,
@@ -19,9 +19,12 @@ import { formatINR } from '../data/products';
 export const UpcomingLots = () => {
   const { upcomingAuctions, isReminderSet, toggleReminder, isRegistered, toggleRegistration } = useAuctions();
   const { isInWishlist, toggleWishlist } = useWishlist();
+  const [searchParams] = useSearchParams();
 
   // Independent Upcoming Lots Filters
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  // Initialize category from URL ?category= param (e.g. from Categories page "Explore Auctions" button)
+  const initialCategory = searchParams.get('category') || 'all';
+  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [startingBidRange, setStartingBidRange] = useState('all'); // 'all', 'under-80k', '80k-120k', 'above-120k'
   const [selectedSeller, setSelectedSeller] = useState('all');
   const [sortBy, setSortBy] = useState('soonest'); // 'soonest', 'starting-bid-high', 'starting-bid-low'
