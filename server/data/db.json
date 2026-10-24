@@ -750,6 +750,131 @@
   ],
   "auctions": [
     {
+      "id": "auc-socket-test-1792865120677",
+      "productId": "prod-test-1792865120677",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 36000,
+      "minIncrement": 1000,
+      "bidCount": 3,
+      "bidHistory": [
+        {
+          "id": "b-1792865121234-ezsr",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 36000,
+          "time": "Just now",
+          "timestamp": 1792865121234
+        },
+        {
+          "id": "b-1792865120821-etkw",
+          "bidder": "Collector Alpha",
+          "bidderId": "buyer-alpha",
+          "amount": 23000,
+          "time": "Just now",
+          "timestamp": 1792865120821
+        },
+        {
+          "id": "b-1792865120819-a3ty",
+          "bidder": "Collector Beta",
+          "bidderId": "buyer-beta",
+          "amount": 22000,
+          "time": "Just now",
+          "timestamp": 1792865120819
+        }
+      ],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792865110677,
+      "endTimestamp": 1792868720677,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792864962794",
+      "productId": "prod-test-1792864962794",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 20000,
+      "minIncrement": 1000,
+      "bidCount": 0,
+      "bidHistory": [],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792864952794,
+      "endTimestamp": 1792868562794,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792864923017",
+      "productId": "prod-test-1792864923017",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 20000,
+      "minIncrement": 1000,
+      "bidCount": 0,
+      "bidHistory": [],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792864913017,
+      "endTimestamp": 1792868523017,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792864886666",
+      "productId": "prod-test-1792864886666",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 20000,
+      "minIncrement": 1000,
+      "bidCount": 0,
+      "bidHistory": [],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792864876666,
+      "endTimestamp": 1792868486666,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
+      "id": "auc-socket-test-1792864819639",
+      "productId": "prod-test-1792864819639",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashi Chased Brass Urn",
+      "seller": "Artisan Workshop",
+      "sellerId": "seller-kashi-artisan",
+      "startingBid": 20000,
+      "currentBid": 20000,
+      "minIncrement": 1000,
+      "bidCount": 0,
+      "bidHistory": [],
+      "approvalStatus": "approved",
+      "status": "active",
+      "startTimestamp": 1792864809639,
+      "endTimestamp": 1792868419639,
+      "remainingSeconds": 3600,
+      "winner": null
+    },
+    {
       "id": "auc-socket-test-1792861884748",
       "productId": "prod-test-1792861884748",
       "type": "auction",
@@ -952,11 +1077,19 @@
         }
       ],
       "approvalStatus": "approved",
-      "status": "active",
+      "status": "ended",
       "startTimestamp": 1792859773184,
       "endTimestamp": 1792863383184,
-      "remainingSeconds": 3600,
-      "winner": null
+      "remainingSeconds": 0,
+      "winner": {
+        "bidder": "Collector Alpha",
+        "bidderId": "buyer-alpha",
+        "amount": 23000,
+        "timestamp": 1792859783375,
+        "time": "Just now"
+      },
+      "winningBid": 23000,
+      "result": "sold"
     },
     {
       "id": "auc-lot-1792830630677",
@@ -1581,7 +1714,29 @@
       "status": "budget_reached",
       "createdAt": 1792861884836,
       "updatedAt": 1792861885301
+    },
+    {
+      "id": "ab-1792865120783-0196",
+      "auctionId": "auc-socket-test-1792865120677",
+      "userId": "buyer-alpha",
+      "bidderName": "Collector Alpha",
+      "maxBudget": 35000,
+      "preferredIncrement": 60,
+      "enabled": true,
+      "status": "budget_reached",
+      "createdAt": 1792865120783,
+      "updatedAt": 1792865121289
     }
   ],
-  "messages": []
+  "messages": [
+    {
+      "id": "msg-1792865121905-z6vd",
+      "auctionId": "auc-socket-test-1792865120677",
+      "userId": "buyer-beta",
+      "sender": "Collector Beta",
+      "text": "Remarkable patina on the chased handles.",
+      "time": "Just now",
+      "timestamp": 1792865121905
+    }
+  ]
 }

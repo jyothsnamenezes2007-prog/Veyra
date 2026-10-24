@@ -28,6 +28,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
+  if (req.url && req.url.startsWith('/socket.io/')) return;
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
@@ -43,9 +44,9 @@ const server = http.createServer(async (req, res) => {
 
 const ioServer = initSocketIO(server);
 
-await new Promise((resolve) => server.listen(0, resolve));
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
-const serverUrl = `http://localhost:${port}`;
+const serverUrl = 'http://127.0.0.1:' + port;
 console.log(`Test server running on ${serverUrl}`);
 
 try {
@@ -76,8 +77,8 @@ try {
   // ── Test 1: Connect two authenticated clients via Socket.IO ─────────────────
   console.log('Test 1: Connect two authenticated clients via Socket.IO');
 
-  const clientA = io(serverUrl, { transports: ['websocket'] });
-  const clientB = io(serverUrl, { transports: ['websocket'] });
+  const clientA = io(serverUrl, { transports: ['polling', 'websocket'] });
+  const clientB = io(serverUrl, { transports: ['polling', 'websocket'] });
 
   await Promise.all([
     new Promise((resolve) => clientA.on('connect', resolve)),
@@ -261,7 +262,7 @@ try {
   });
 
   // Client C (unrelated third buyer) tries to join call
-  const clientC = io(serverUrl, { transports: ['websocket'] });
+  const clientC = io(serverUrl, { transports: ['polling', 'websocket'] });
   await new Promise((r) => clientC.on('connect', r));
 
   const clientCErrorPromise = new Promise((resolve) => {
