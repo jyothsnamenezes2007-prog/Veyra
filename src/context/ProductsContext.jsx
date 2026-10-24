@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { PRODUCTS, CATEGORIES } from '../data/products';
 import { useToast } from './ToastContext';
 
@@ -24,39 +24,94 @@ export const ProductsProvider = ({ children }) => {
     }
   }, [customProducts]);
 
+  // Synchronize with server
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/products')
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data.success && Array.isArray(data.products)) {
+          const customFromServer = data.products.filter((p) => p.id && String(p.id).startsWith('prod-'));
+          if (customFromServer.length > 0) {
+            setCustomProducts((prev) => {
+              const prevIds = new Set(prev.map((p) => p.id));
+              const merged = [...prev];
+              customFromServer.forEach((p) => {
+                if (!prevIds.has(p.id)) {
+                  merged.unshift(p);
+                }
+              });
+              return merged;
+            });
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const allProducts = [...customProducts, ...PRODUCTS];
 
-  const addProduct = (productData) => {
+  const addProduct = useCallback(async (productData) => {
+    const isAuction = productData.isAuction === true || productData.type === 'auction';
+    const type = isAuction ? 'auction' : 'shop';
+
     const newProduct = {
       ...productData,
-      id: 'custom-' + Date.now(),
+      id: productData.id || ('prod-custom-' + Date.now()),
+      type: type,
+      isAuction: isAuction,
       rating: 5.0,
       featured: false,
       inStock: true,
       condition: productData.condition || 'Studio Mint Original',
-      availability: 'In Stock • Studio Direct',
+      availability: isAuction ? 'Scheduled for Auction' : 'In Stock • Studio Direct',
       listingStatus: productData.listingStatus || 'pending',
       listedAt: new Date().toISOString(),
-      images: productData.images && productData.images.length > 0
-        ? productData.images
-        : [productData.image]
+      images:
+        productData.images && productData.images.length > 0
+          ? productData.images
+          : [productData.image]
     };
+
+    // Try server persistence
+    try {
+      fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct)
+      }).catch(() => {});
+    } catch (e) {}
+
     setCustomProducts((prev) => [newProduct, ...prev]);
     return newProduct;
-  };
+  }, []);
 
-  const getProductById = (id) => {
-    return allProducts.find((p) => p.id === id || p.auctionId === id || p.upcomingId === id);
-  };
+  const getProductById = useCallback(
+    (id) => {
+      return allProducts.find((p) => p.id === id || p.auctionId === id || p.upcomingId === id);
+    },
+    [allProducts]
+  );
 
-  // Get all products listed by a specific user (by user.id as sellerId)
-  const getMyProducts = (userId) => {
-    if (!userId) return [];
-    return customProducts.filter((p) => p.sellerId === userId);
-  };
+  const getMyProducts = useCallback(
+    (userId) => {
+      if (!userId) return [];
+      return customProducts.filter((p) => p.sellerId === userId);
+    },
+    [customProducts]
+  );
 
-  // Update the listing status of a custom product
-  const updateProductStatus = (productId, status) => {
+  const updateProductStatus = useCallback((productId, status) => {
+    // Call server endpoint
+    if (status === 'active') {
+      fetch(`/api/products/${productId}/approve`, { method: 'POST' }).catch(() => {});
+    } else if (status === 'rejected') {
+      fetch(`/api/products/${productId}/reject`, { method: 'POST' }).catch(() => {});
+    }
+
     setCustomProducts((prev) =>
       prev.map((p) => (p.id === productId ? { ...p, listingStatus: status } : p))
     );
@@ -72,8 +127,8 @@ export const ProductsProvider = ({ children }) => {
             const isApproved = status === 'active';
             const isRejected = status === 'rejected';
             const newApproval = isApproved ? 'approved' : isRejected ? 'rejected' : 'pending';
-            const isStarted = now >= a.scheduledTimestamp;
-            const isEnded = now >= a.endTimestamp;
+            const isStarted = now >= (a.scheduledTimestamp || a.startTimestamp || 0);
+            const isEnded = now >= (a.endTimestamp || a.endTime || 0);
             const newStatus = !isApproved
               ? newApproval
               : isEnded
@@ -91,7 +146,7 @@ export const ProductsProvider = ({ children }) => {
     } catch (e) {
       console.warn('Failed to sync auction approval status', e);
     }
-  };
+  }, []);
 
   return (
     <ProductsContext.Provider

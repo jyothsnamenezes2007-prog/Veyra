@@ -52,7 +52,7 @@ const CURATED_IMAGE_PRESETS = [
 
 export const Sell = () => {
   const navigate = useNavigate();
-  const { addProduct, customProducts } = useProducts();
+  const { addProduct } = useProducts();
   const { createAuctionLot } = useAuctions();
   const { user } = useAuth();
 
@@ -73,8 +73,15 @@ export const Sell = () => {
   }, []);
   const defaultStartTime = '18:00';
 
-  // Toggle between Marketplace Sale ('direct') and Live Auction Lot ('auction')
-  const [listingType, setListingType] = useState('auction');
+  // Default end date (4 days from now) and end time (21:00)
+  const defaultEndDate = useMemo(() => {
+    const d = new Date(Date.now() + 4 * 86400000);
+    return d.toISOString().split('T')[0];
+  }, []);
+  const defaultEndTime = '21:00';
+
+  // Two distinct selling options: 'shop' (Sell as a Shop Product) vs 'auction' (Sell through Live Auction)
+  const [sellingOption, setSellingOption] = useState('shop');
 
   // Form fields state
   const [formData, setFormData] = useState({
@@ -82,15 +89,19 @@ export const Sell = () => {
     seller: defaultSellerName,
     location: 'Chandigarh, India',
     category: 'Handmade',
-    price: 45000,          // Estimated Lot Value in INR (or direct price)
-    startingBid: 28000,    // Starting Bid in INR
+    price: 45000,          // Price in INR (or Estimated Lot Value)
+    startingBid: 28000,    // Starting Bid in INR (Live Auction only)
+    minIncrement: 1000,    // Minimum bid increment in INR
+    reservePrice: '',      // Optional reserve price in INR
     startDate: defaultStartDate,
     startTime: defaultStartTime,
-    durationDays: 3,       // Duration in Days (supports decimals e.g. 0.5, 1, 2.5, 3)
+    endDate: defaultEndDate,
+    endTime: defaultEndTime,
     description: 'Original solid Burma teak framework with renewed hand-woven natural cane seating. Features documented stenciled archival inventory markings on the rear apron.',
     materials: 'Aged reclaimed Burma teak, natural hand-woven cane',
     dimensions: '78cm H × 51cm W × 54cm D',
     provenance: 'Certified masterwork from Chandigarh architectural restoration',
+    authenticityCertificate: 'Certificate of Provenance & Studio Hallmark',
     condition: 'Pristine Museum Restored'
   });
 
@@ -120,19 +131,23 @@ export const Sell = () => {
     if (formError) setFormError('');
   };
 
-  // Automatically calculate end date and time based on start date, time, and duration
-  const calculatedSchedule = useMemo(() => {
-    if (!formData.startDate || !formData.startTime || !formData.durationDays) {
+  // Schedule timestamps and validation summary
+  const scheduleSummary = useMemo(() => {
+    if (sellingOption !== 'auction') return null;
+    if (!formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
       return null;
     }
-    const durationNum = parseFloat(formData.durationDays);
-    if (isNaN(durationNum) || durationNum <= 0) return null;
 
     const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
-    if (isNaN(startDateTime.getTime())) return null;
+    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
 
-    const endDateTime = new Date(startDateTime.getTime() + Math.round(durationNum * 86400000));
-    const isPast = startDateTime.getTime() <= Date.now();
+    if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) return null;
+
+    const startTimestamp = startDateTime.getTime();
+    const endTimestamp = endDateTime.getTime();
+    const isStartInPast = startTimestamp <= Date.now();
+    const isEndBeforeStart = endTimestamp <= startTimestamp;
+    const durationHours = Math.round((endTimestamp - startTimestamp) / 3600000);
 
     const formatDateString = (d) =>
       d.toLocaleDateString('en-GB', {
@@ -152,12 +167,15 @@ export const Sell = () => {
     return {
       startDateTime,
       endDateTime,
-      isPast,
+      startTimestamp,
+      endTimestamp,
+      isStartInPast,
+      isEndBeforeStart,
+      durationHours,
       startFormatted: `${formatDateString(startDateTime)} • ${formatTimeString(startDateTime)} IST`,
-      endFormatted: `${formatDateString(endDateTime)} • ${formatTimeString(endDateTime)} IST`,
-      durationHours: Math.round(durationNum * 24)
+      endFormatted: `${formatDateString(endDateTime)} • ${formatTimeString(endDateTime)} IST`
     };
-  }, [formData.startDate, formData.startTime, formData.durationDays]);
+  }, [sellingOption, formData.startDate, formData.startTime, formData.endDate, formData.endTime]);
 
   // Handle file uploads with type & size validation
   const handleFileSelect = (e) => {
@@ -238,109 +256,160 @@ export const Sell = () => {
       return;
     }
     if (!formData.price || Number(formData.price) <= 0) {
-      setFormError('Please enter a valid estimated lot value / price in INR.');
+      setFormError(
+        sellingOption === 'auction'
+          ? 'Please enter a valid estimated lot valuation in INR.'
+          : 'Please enter a valid marketplace selling price in INR.'
+      );
       return;
     }
     if (!images.length) {
-      setFormError('Please upload at least one photograph for the lot preview.');
+      setFormError('Please upload at least one photograph for the listing preview.');
       return;
     }
     if (!formData.description.trim()) {
-      setFormError('Please provide a description of the craftsmanship story and provenance.');
+      setFormError('Please provide a description of the craftsmanship story and narrative.');
       return;
     }
 
     const priceNum = Number(formData.price);
 
     // 3. Auction specific validation
-    if (listingType === 'auction') {
-      const startingBidNum = Number(formData.startingBid);
+    let startTimestamp = null;
+    let endTimestamp = null;
+    let startingBidNum = null;
+    let minIncrementNum = null;
+    let reservePriceNum = null;
+
+    if (sellingOption === 'auction') {
+      startingBidNum = Number(formData.startingBid);
       if (isNaN(startingBidNum) || startingBidNum <= 0) {
         setFormError('Starting bid must be a valid positive amount in INR.');
         return;
       }
       if (startingBidNum > priceNum) {
-        setFormError('Starting bid cannot exceed the estimated lot value.');
+        setFormError('Starting bid cannot exceed the estimated lot valuation.');
         return;
       }
+
       if (!formData.startDate || !formData.startTime) {
         setFormError('Please provide an auction start date and time.');
         return;
       }
-      if (calculatedSchedule && calculatedSchedule.isPast) {
-        setFormError('Auction start date and time cannot be in the past. Please schedule a future time.');
+      if (!formData.endDate || !formData.endTime) {
+        setFormError('Please provide an auction end date and time.');
         return;
       }
-      const durationNum = parseFloat(formData.durationDays);
-      if (isNaN(durationNum) || durationNum <= 0) {
-        setFormError('Auction duration must be at least 0.1 days.');
+
+      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
+      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
+
+      if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+        setFormError('Invalid date or time specified. Please verify the schedule.');
         return;
+      }
+
+      startTimestamp = startDateTime.getTime();
+      endTimestamp = endDateTime.getTime();
+
+      if (startTimestamp <= Date.now()) {
+        setFormError('Auction start date and time must be scheduled in the future.');
+        return;
+      }
+
+      if (endTimestamp <= startTimestamp) {
+        setFormError('Auction end date and time must be strictly after the start date and time.');
+        return;
+      }
+
+      minIncrementNum = formData.minIncrement ? Number(formData.minIncrement) : 500;
+      if (isNaN(minIncrementNum) || minIncrementNum <= 0) {
+        setFormError('Minimum bid increment must be a positive number.');
+        return;
+      }
+
+      if (formData.reservePrice && String(formData.reservePrice).trim()) {
+        reservePriceNum = Number(formData.reservePrice);
+        if (isNaN(reservePriceNum) || reservePriceNum < startingBidNum) {
+          setFormError('Reserve price cannot be less than the starting bid.');
+          return;
+        }
       }
     }
 
-    // Prevent duplicate submission
     setIsSubmitting(true);
 
     try {
-      // 1. Create product record in Products catalog
-      const productPayload = {
-        name: formData.name.trim(),
-        seller: formData.seller.trim(),
-        sellerId: user.id, // Enforce authenticated seller identity
-        location: formData.location.trim() || 'Studio Atelier',
-        category: formData.category,
-        price: priceNum,
-        isAuction: listingType === 'auction',
-        startingBid: listingType === 'auction' ? Number(formData.startingBid) : undefined,
-        images: images,
-        image: images[0],
-        description: formData.description.trim(),
-        materials: formData.materials.trim(),
-        dimensions: formData.dimensions.trim(),
-        provenance: formData.provenance.trim(),
-        condition: formData.condition || 'Pristine Studio Original',
-        listingStatus: 'pending' // Mandatory pending approval
-      };
+      if (sellingOption === 'shop') {
+        // Normal Shop Product
+        const productPayload = {
+          name: formData.name.trim(),
+          seller: formData.seller.trim(),
+          sellerId: user.id,
+          location: formData.location.trim() || 'Studio Atelier',
+          category: formData.category,
+          price: priceNum,
+          type: 'shop',
+          isAuction: false,
+          images: images,
+          image: images[0],
+          description: formData.description.trim(),
+          materials: formData.materials.trim(),
+          dimensions: formData.dimensions.trim(),
+          condition: formData.condition || 'Studio Mint Original',
+          listingStatus: 'pending'
+        };
 
-      const createdProduct = addProduct(productPayload);
-
-      // 2. If auction format, create and schedule lot in AuctionContext
-      let createdAuction = null;
-      if (listingType === 'auction') {
+        const createdProduct = await addProduct(productPayload);
+        setSubmittedData({
+          product: createdProduct,
+          auction: null,
+          sellingOption: 'shop'
+        });
+      } else {
+        // Live Auction Lot
         const auctionPayload = {
-          productId: createdProduct.id,
           name: formData.name.trim(),
           seller: formData.seller.trim(),
           maker: formData.seller.trim(),
           sellerId: user.id,
           location: formData.location.trim() || 'Studio Atelier',
           category: formData.category,
-          startingBid: Number(formData.startingBid),
+          type: 'auction',
+          isAuction: true,
+          startingBid: startingBidNum,
           estimatedValue: priceNum,
+          minIncrement: minIncrementNum,
+          reservePrice: reservePriceNum,
           startDate: formData.startDate,
           startTime: formData.startTime,
-          durationDays: parseFloat(formData.durationDays),
+          endDate: formData.endDate,
+          endTime: formData.endTime,
+          startTimestamp: startTimestamp,
+          endTimestamp: endTimestamp,
           images: images,
           image: images[0],
           description: formData.description.trim(),
           dimensions: formData.dimensions.trim(),
           materials: formData.materials.trim(),
           provenance: formData.provenance.trim(),
-          condition: formData.condition || 'Pristine Studio Original'
+          authenticityCertificate: formData.authenticityCertificate || 'Certificate of Provenance & Studio Hallmark',
+          condition: formData.condition || 'Pristine Museum Restored',
+          approvalStatus: 'pending',
+          status: 'pending'
         };
 
-        const auctionOutcome = createAuctionLot(auctionPayload);
-        if (!auctionOutcome.success) {
-          throw new Error(auctionOutcome.error || 'Failed to register auction lot with scheduler.');
+        const outcome = await createAuctionLot(auctionPayload);
+        if (!outcome.success) {
+          throw new Error(outcome.error || 'Failed to register auction lot with scheduler.');
         }
-        createdAuction = auctionOutcome.auction;
-      }
 
-      setSubmittedData({
-        product: createdProduct,
-        auction: createdAuction,
-        listingType
-      });
+        setSubmittedData({
+          product: outcome.auction,
+          auction: outcome.auction,
+          sellingOption: 'auction'
+        });
+      }
     } catch (err) {
       console.error('Submission error:', err);
       setFormError(err.message || 'An error occurred while saving your listing. Please try again.');
@@ -358,6 +427,7 @@ export const Sell = () => {
       name: '',
       price: '',
       startingBid: '',
+      reservePrice: '',
       description: ''
     }));
     setImages([]);
@@ -371,7 +441,7 @@ export const Sell = () => {
         <div style={{ marginBottom: '32px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
             <span className="eyebrow" style={{ letterSpacing: '0.12em' }}>
-              ATELIER WORKSHOP PORTAL
+              ATELIER SELLER PORTAL
             </span>
           </div>
           <h1
@@ -384,10 +454,10 @@ export const Sell = () => {
               margin: '0 0 10px 0'
             }}
           >
-            Live Auction Listing
+            Create Product Listing
           </h1>
-          <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-secondary)', maxWidth: '640px', margin: 0, lineHeight: 1.55 }}>
-            Submit studio ceramics, cast bronzes, archival monotypes, and living art for curated live auction scheduling and collector bidding.
+          <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-secondary)', maxWidth: '680px', margin: 0, lineHeight: 1.55 }}>
+            Choose whether to sell directly in the Veyra marketplace or schedule a live catalog auction session with real-time bidding.
           </p>
         </div>
 
@@ -453,32 +523,137 @@ export const Sell = () => {
               <CheckCircle2 size={28} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
               <div style={{ flex: 1 }}>
                 <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
-                  {submittedData.listingType === 'auction'
+                  {submittedData.sellingOption === 'auction'
                     ? 'Live Auction Lot Submitted for Approval!'
-                    : 'Marketplace Listing Submitted for Approval!'}
+                    : 'Shop Product Submitted for Approval!'}
                 </h3>
                 <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 18px 0' }}>
-                  <strong>"{submittedData.product.name}"</strong> has been successfully registered and queued for atelier curator review with status{' '}
-                  <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>. Once reviewed, it will be automatically published to the upcoming auction schedule.
+                  <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
+                  <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                    {submittedData.sellingOption}
+                  </code>{' '}
+                  and queued for curator review with status{' '}
+                  <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
+                  {submittedData.sellingOption === 'auction'
+                    ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
+                    : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
                 </p>
 
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
                     <Store size={15} />
-                    <span>View Your Atelier Listings</span>
+                    <span>View in Seller Dashboard</span>
                   </Link>
                   <button
                     onClick={handleResetForm}
                     className="btn btn-secondary"
                     style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
                   >
-                    <span>Submit Another Lot</span>
+                    <span>Submit Another Item</span>
                   </button>
                 </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Selling Flow Selector: 2 Distinct Options */}
+        <div style={{ marginBottom: '32px' }}>
+          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>
+            Select Selling Method *
+          </label>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '16px'
+            }}
+          >
+            {/* Option 1: Shop Product */}
+            <div
+              onClick={() => setSellingOption('shop')}
+              style={{
+                backgroundColor: '#FFFFFF',
+                border: sellingOption === 'shop' ? '2px solid var(--accent-burgundy)' : '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '20px 24px',
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    backgroundColor: sellingOption === 'shop' ? 'rgba(120, 59, 75, 0.12)' : 'var(--surface-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: sellingOption === 'shop' ? 'var(--accent-burgundy)' : 'var(--text-secondary)'
+                  }}
+                >
+                  <ShoppingBag size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Sell as a Shop Product
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    Normal marketplace listing
+                  </span>
+                </div>
+              </div>
+              <p style={{ margin: '8px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Fixed-price object published to the regular shopping catalog. Collectors can add to bag and checkout immediately upon approval.
+              </p>
+            </div>
+
+            {/* Option 2: Live Auction */}
+            <div
+              onClick={() => setSellingOption('auction')}
+              style={{
+                backgroundColor: '#FFFFFF',
+                border: sellingOption === 'auction' ? '2px solid var(--accent-burgundy)' : '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '20px 24px',
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+                position: 'relative'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    backgroundColor: sellingOption === 'auction' ? 'rgba(120, 59, 75, 0.12)' : 'var(--surface-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: sellingOption === 'auction' ? 'var(--accent-burgundy)' : 'var(--text-secondary)'
+                  }}
+                >
+                  <Gavel size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Sell through Live Auction
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--accent-burgundy)', fontWeight: 600 }}>
+                    Scheduled catalogue session
+                  </span>
+                </div>
+              </div>
+              <p style={{ margin: '8px 0 0 0', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Scheduled lot with starting bid and reserve. Appears in Upcoming Lots upon approval; bidding opens automatically at start time.
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Main Two-Column Layout */}
         <div
@@ -505,65 +680,13 @@ export const Sell = () => {
 
             {/* SECTION A: Object Specifications */}
             <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '24px', marginBottom: '28px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ marginBottom: '20px' }}>
                 <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                  Object Specifications
+                  {sellingOption === 'auction' ? 'Auction Lot Details' : 'Product Specifications'}
                 </h2>
-
-                {/* Toggle: Marketplace Sale vs Live Auction Lot */}
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    backgroundColor: 'var(--bg-primary)',
-                    padding: '3px',
-                    borderRadius: 'var(--radius-xs)',
-                    border: '1px solid var(--border-color)'
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setListingType('direct')}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      fontSize: '11.5px',
-                      fontWeight: 600,
-                      borderRadius: 'var(--radius-xs)',
-                      border: 'none',
-                      cursor: 'pointer',
-                      backgroundColor: listingType === 'direct' ? '#191919' : 'transparent',
-                      color: listingType === 'direct' ? '#FFFFFF' : 'var(--text-secondary)',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <ShoppingBag size={13} />
-                    <span>Marketplace Sale</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setListingType('auction')}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '6px 14px',
-                      fontSize: '11.5px',
-                      fontWeight: 600,
-                      borderRadius: 'var(--radius-xs)',
-                      border: 'none',
-                      cursor: 'pointer',
-                      backgroundColor: listingType === 'auction' ? 'var(--accent-burgundy)' : 'transparent',
-                      color: listingType === 'auction' ? '#FFFFFF' : 'var(--text-secondary)',
-                      transition: 'all 120ms ease'
-                    }}
-                  >
-                    <Gavel size={13} />
-                    <span>Live Auction Lot</span>
-                  </button>
-                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  Enter authentic information describing the object and its craftsmanship.
+                </p>
               </div>
 
               {/* Product Title */}
@@ -620,7 +743,7 @@ export const Sell = () => {
                 </div>
               </div>
 
-              {/* 2 Columns: Category & Estimated Lot Value */}
+              {/* 2 Columns: Category & Price */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div className="form-group">
                   <label className="form-label" htmlFor="category">
@@ -644,14 +767,14 @@ export const Sell = () => {
 
                 <div className="form-group">
                   <label className="form-label" htmlFor="price">
-                    {listingType === 'auction' ? 'Estimated Lot Value (₹) *' : 'Marketplace Price (₹) *'}
+                    {sellingOption === 'auction' ? 'Estimated Lot Valuation (₹) *' : 'Marketplace Selling Price (₹) *'}
                   </label>
                   <input
                     id="price"
                     name="price"
                     type="number"
-                    min="500"
-                    step="500"
+                    min="100"
+                    step="100"
                     className="form-input"
                     value={formData.price}
                     onChange={handleInputChange}
@@ -659,78 +782,100 @@ export const Sell = () => {
                     required
                   />
                   <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
-                    Authoritative catalog appraisal benchmark
+                    {sellingOption === 'auction'
+                      ? 'Authoritative catalogue appraisal benchmark'
+                      : 'Direct acquisition price paid by buyers'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* SECTION B: Auction Configuration (Only active when Live Auction Lot selected) */}
-            {listingType === 'auction' && (
+            {/* SECTION B: Auction-Specific Configuration (Active when Live Auction selected) */}
+            {sellingOption === 'auction' && (
               <div
                 style={{
                   backgroundColor: 'rgba(120, 59, 75, 0.02)',
-                  border: '1px solid rgba(120, 59, 75, 0.18)',
+                  border: '1px solid rgba(120, 59, 75, 0.25)',
                   borderRadius: 'var(--radius-xs)',
                   padding: '22px',
                   marginBottom: '28px'
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                  <Gavel size={17} color="var(--accent-burgundy)" />
+                  <Gavel size={18} color="var(--accent-burgundy)" />
                   <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.25rem', fontWeight: 600, margin: 0, color: 'var(--accent-burgundy)' }}>
-                    Auction Configuration
+                    Auction Schedule & Bidding Parameters
                   </h3>
                 </div>
 
-                {/* Starting Bid & Duration in Days */}
+                {/* Starting Bid & Bid Increment */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" htmlFor="startingBid">
-                      Starting Bid (₹) *
+                      Starting Bid Price (₹) *
                     </label>
                     <input
                       id="startingBid"
                       name="startingBid"
                       type="number"
-                      min="500"
+                      min="100"
                       step="500"
                       className="form-input"
                       value={formData.startingBid}
                       onChange={handleInputChange}
                       placeholder="e.g. 28000"
-                      required={listingType === 'auction'}
+                      required={sellingOption === 'auction'}
                     />
                     <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
-                      Minimum valid opening bid required
+                      Opening bid amount required to open lot
                     </span>
                   </div>
 
                   <div className="form-group" style={{ margin: 0 }}>
-                    <label className="form-label" htmlFor="durationDays">
-                      Auction Duration (Days) *
+                    <label className="form-label" htmlFor="minIncrement">
+                      Minimum Bid Increment (₹) *
                     </label>
                     <input
-                      id="durationDays"
-                      name="durationDays"
+                      id="minIncrement"
+                      name="minIncrement"
                       type="number"
-                      step="0.5"
-                      min="0.1"
-                      max="30"
+                      min="100"
+                      step="100"
                       className="form-input"
-                      value={formData.durationDays}
+                      value={formData.minIncrement}
                       onChange={handleInputChange}
-                      placeholder="e.g. 3 (or 0.5 for 12 hours)"
-                      required={listingType === 'auction'}
+                      placeholder="e.g. 1000"
+                      required={sellingOption === 'auction'}
                     />
                     <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
-                      Supports decimals (e.g. 0.5 for 12h, 1, 2.5, 3 days)
+                      Minimum raise amount above current bid
                     </span>
                   </div>
                 </div>
 
-                {/* Start Date & Start Time */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '18px' }}>
+                {/* Reserve Price (Optional) */}
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label className="form-label" htmlFor="reservePrice">
+                    Reserve Price (₹) — <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}>Optional</span>
+                  </label>
+                  <input
+                    id="reservePrice"
+                    name="reservePrice"
+                    type="number"
+                    min="100"
+                    step="500"
+                    className="form-input"
+                    value={formData.reservePrice}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 35000 (leave blank for no reserve)"
+                  />
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    Confidential minimum price. If highest bid is below reserve, seller is not obligated to conclude.
+                  </span>
+                </div>
+
+                {/* Start Date & Time */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label className="form-label" htmlFor="startDate">
                       Auction Start Date *
@@ -743,7 +888,7 @@ export const Sell = () => {
                       className="form-input"
                       value={formData.startDate}
                       onChange={handleInputChange}
-                      required={listingType === 'auction'}
+                      required={sellingOption === 'auction'}
                     />
                   </div>
 
@@ -758,17 +903,51 @@ export const Sell = () => {
                       className="form-input"
                       value={formData.startTime}
                       onChange={handleInputChange}
-                      required={listingType === 'auction'}
+                      required={sellingOption === 'auction'}
                     />
                   </div>
                 </div>
 
-                {/* Automatically Calculated End Date & Time Display Card */}
-                {calculatedSchedule && (
+                {/* End Date & Time */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" htmlFor="endDate">
+                      Auction End Date *
+                    </label>
+                    <input
+                      id="endDate"
+                      name="endDate"
+                      type="date"
+                      min={formData.startDate || new Date().toISOString().split('T')[0]}
+                      className="form-input"
+                      value={formData.endDate}
+                      onChange={handleInputChange}
+                      required={sellingOption === 'auction'}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label" htmlFor="endTime">
+                      Auction End Time *
+                    </label>
+                    <input
+                      id="endTime"
+                      name="endTime"
+                      type="time"
+                      className="form-input"
+                      value={formData.endTime}
+                      onChange={handleInputChange}
+                      required={sellingOption === 'auction'}
+                    />
+                  </div>
+                </div>
+
+                {/* Schedule Summary Banner */}
+                {scheduleSummary && (
                   <div
                     style={{
                       backgroundColor: '#FFFFFF',
-                      border: calculatedSchedule.isPast ? '1px solid var(--error-color)' : '1px dashed var(--accent-burgundy)',
+                      border: scheduleSummary.isStartInPast || scheduleSummary.isEndBeforeStart ? '1px solid var(--error-color)' : '1px dashed var(--accent-burgundy)',
                       borderRadius: 'var(--radius-xs)',
                       padding: '12px 16px',
                       display: 'flex',
@@ -778,24 +957,31 @@ export const Sell = () => {
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                       <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, color: 'var(--accent-burgundy)' }}>
-                        Calculated Schedule Summary
+                        Verified Server Schedule
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {calculatedSchedule.durationHours} Hours Total
+                        {scheduleSummary.durationHours > 0 ? `${scheduleSummary.durationHours} Hours Duration` : 'Invalid Duration'}
                       </span>
                     </div>
 
                     <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginTop: '2px' }}>
-                      <strong>Opening:</strong> {calculatedSchedule.startFormatted}
+                      <strong>Start:</strong> {scheduleSummary.startFormatted}
                     </div>
                     <div style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
-                      <strong>Closing:</strong> {calculatedSchedule.endFormatted}
+                      <strong>End:</strong> {scheduleSummary.endFormatted}
                     </div>
 
-                    {calculatedSchedule.isPast && (
+                    {scheduleSummary.isStartInPast && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error-color)', fontSize: '11.5px', marginTop: '4px' }}>
                         <AlertCircle size={13} />
-                        <span>Scheduled start time is in the past. Please select a future date and time.</span>
+                        <span>Start time must be scheduled in the future.</span>
+                      </div>
+                    )}
+
+                    {scheduleSummary.isEndBeforeStart && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--error-color)', fontSize: '11.5px', marginTop: '4px' }}>
+                        <AlertCircle size={13} />
+                        <span>End time must be after the start time.</span>
                       </div>
                     )}
                   </div>
@@ -852,7 +1038,7 @@ export const Sell = () => {
                             letterSpacing: '0.04em'
                           }}
                         >
-                          Main
+                          Cover
                         </span>
                       )}
 
@@ -863,140 +1049,166 @@ export const Sell = () => {
                           position: 'absolute',
                           top: '3px',
                           right: '3px',
-                          width: '18px',
-                          height: '18px',
+                          width: '20px',
+                          height: '20px',
                           borderRadius: '50%',
-                          backgroundColor: 'rgba(0, 0, 0, 0.72)',
+                          backgroundColor: 'rgba(0, 0, 0, 0.65)',
                           color: '#FFFFFF',
                           border: 'none',
-                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          padding: 0
+                          cursor: 'pointer'
                         }}
-                        title="Remove photo"
-                        aria-label="Remove image"
                       >
-                        <Trash2 size={10} />
+                        <Trash2 size={11} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Upload & Add Photo Controls */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px' }}>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept="image/png, image/jpeg, image/jpg, image/webp"
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
-
-                <button
-                  type="button"
+              {/* Image Upload Area */}
+              {images.length < MAX_IMAGES && (
+                <div
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={images.length >= MAX_IMAGES}
-                  className="btn btn-secondary btn-sm"
-                  style={{ height: '38px', gap: '6px' }}
+                  style={{
+                    border: '1.5px dashed var(--border-color)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '24px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    backgroundColor: 'var(--bg-primary)',
+                    marginBottom: '16px',
+                    transition: 'border-color 150ms ease'
+                  }}
+                  className="upload-dropzone"
                 >
-                  <Camera size={14} />
-                  <span>Add Photo</span>
-                </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={handleFileSelect}
+                  />
+                  <div style={{ width: '38px', height: '38px', borderRadius: '50%', backgroundColor: 'var(--surface-secondary)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+                    <Upload size={18} />
+                  </div>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', display: 'block' }}>
+                    Click to browse and upload photographs
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
+                    PNG, JPG, or WEBP up to 5MB each
+                  </span>
+                </div>
+              )}
 
-                <div style={{ display: 'flex', gap: '6px', flex: 1, minWidth: '220px' }}>
+              {/* Add by URL */}
+              {images.length < MAX_IMAGES && (
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                   <input
                     type="url"
-                    placeholder="Or paste external image URL"
+                    className="form-input"
                     value={customImageUrl}
                     onChange={(e) => setCustomImageUrl(e.target.value)}
-                    style={{
-                      flex: 1,
-                      height: '38px',
-                      padding: '0 10px',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '12px',
-                      outline: 'none',
-                      backgroundColor: '#FFFFFF'
-                    }}
+                    placeholder="Or paste high-resolution image URL..."
+                    style={{ flex: 1, fontSize: '12px' }}
                   />
                   <button
                     type="button"
                     onClick={handleAddUrlImage}
-                    disabled={!customImageUrl.trim() || images.length >= MAX_IMAGES}
                     className="btn btn-secondary btn-sm"
-                    style={{ height: '38px' }}
+                    disabled={!customImageUrl.trim()}
                   >
                     <Plus size={13} />
-                    <span>Attach</span>
+                    <span>Add URL</span>
                   </button>
+                </div>
+              )}
+
+              {/* Curated Presets */}
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  Quick demonstration presets:
+                </span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {CURATED_IMAGE_PRESETS.map((preset, pIdx) => (
+                    <button
+                      key={pIdx}
+                      type="button"
+                      onClick={() => {
+                        if (images.length < MAX_IMAGES && !images.includes(preset.url)) {
+                          setImages((prev) => [...prev, preset.url]);
+                        }
+                      }}
+                      style={{
+                        fontSize: '11px',
+                        padding: '3px 8px',
+                        borderRadius: 'var(--radius-xs)',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: '#FFFFFF',
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)'
+                      }}
+                    >
+                      + {preset.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Quick Preset Selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Presets:</span>
-                {CURATED_IMAGE_PRESETS.map((preset, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      if (!images.includes(preset.url) && images.length < MAX_IMAGES) {
-                        setImages((prev) => [...prev, preset.url]);
-                      }
-                    }}
-                    style={{
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: '#FFFFFF',
-                      padding: '3px 8px',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      color: 'var(--text-secondary)'
-                    }}
-                  >
-                    + {preset.label}
-                  </button>
-                ))}
-              </div>
-
               {imageError && (
-                <p className="form-error" style={{ marginTop: '8px' }}>
-                  {imageError}
-                </p>
+                <div style={{ marginTop: '10px', color: 'var(--error-color)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertCircle size={14} />
+                  <span>{imageError}</span>
+                </div>
               )}
             </div>
 
-            {/* SECTION D: Craftsmanship & Additional Specifications */}
-            <div style={{ marginBottom: '24px' }}>
+            {/* SECTION D: Provenance, Story & Physical Specifications */}
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '24px', marginBottom: '28px' }}>
               <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.45rem', fontWeight: 600, margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
-                Craftsmanship & Provenance
+                Story, Provenance & Physical Specifications
               </h2>
 
+              {/* Description */}
               <div className="form-group">
                 <label className="form-label" htmlFor="description">
-                  Description & Craftsmanship Story *
+                  Craftsmanship Story & Editorial Narrative *
                 </label>
                 <textarea
                   id="description"
                   name="description"
+                  rows={4}
                   className="form-textarea"
                   value={formData.description}
                   onChange={handleInputChange}
-                  rows={4}
-                  placeholder="Detail the firing method, joinery technique, wood patina, or architectural history..."
+                  placeholder="Describe the materials, studio technique, restoration work, and cultural history of this piece..."
                   required
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              {/* Condition & Materials */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="condition">
+                    Condition State
+                  </label>
+                  <input
+                    id="condition"
+                    name="condition"
+                    type="text"
+                    className="form-input"
+                    value={formData.condition}
+                    onChange={handleInputChange}
+                    placeholder="e.g. Pristine Museum Restored"
+                  />
+                </div>
+
                 <div className="form-group">
                   <label className="form-label" htmlFor="materials">
-                    Materials
+                    Materials Used
                   </label>
                   <input
                     id="materials"
@@ -1005,10 +1217,13 @@ export const Sell = () => {
                     className="form-input"
                     value={formData.materials}
                     onChange={handleInputChange}
-                    placeholder="e.g. Solid Teak, Hand-woven Rattan"
+                    placeholder="e.g. Reclaimed teak, hand-woven cane"
                   />
                 </div>
+              </div>
 
+              {/* Dimensions & Provenance */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
                 <div className="form-group">
                   <label className="form-label" htmlFor="dimensions">
                     Dimensions
@@ -1023,38 +1238,54 @@ export const Sell = () => {
                     placeholder="e.g. 78cm H × 51cm W × 54cm D"
                   />
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="provenance">
+                    Archival Provenance
+                  </label>
+                  <input
+                    id="provenance"
+                    name="provenance"
+                    type="text"
+                    className="form-input"
+                    value={formData.provenance}
+                    onChange={handleInputChange}
+                    placeholder="e.g. Documented restoration from Chandigarh archives"
+                  />
+                </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" htmlFor="provenance">
-                  Provenance & Certification Note
+              {/* Authenticity Certificate */}
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" htmlFor="authenticityCertificate">
+                  Authenticity Certification Hallmark
                 </label>
                 <input
-                  id="provenance"
-                  name="provenance"
+                  id="authenticityCertificate"
+                  name="authenticityCertificate"
                   type="text"
                   className="form-input"
-                  value={formData.provenance}
+                  value={formData.authenticityCertificate}
                   onChange={handleInputChange}
-                  placeholder="e.g. Studio signature seal, European Design Council Certificate"
+                  placeholder="e.g. Certificate of Provenance & Studio Hallmark"
                 />
               </div>
             </div>
 
-            {/* Error Message Display */}
+            {/* Error Message */}
             {formError && (
               <div
                 style={{
+                  backgroundColor: 'rgba(158, 58, 58, 0.08)',
+                  border: '1px solid var(--error-color)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '12px 16px',
+                  marginBottom: '24px',
+                  color: 'var(--error-color)',
+                  fontSize: '13px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  padding: '12px 14px',
-                  backgroundColor: 'rgba(158, 58, 58, 0.08)',
-                  border: '1px solid rgba(158, 58, 58, 0.25)',
-                  borderRadius: 'var(--radius-xs)',
-                  color: 'var(--error-color)',
-                  fontSize: '12.5px',
-                  marginBottom: '20px'
+                  gap: '8px'
                 }}
               >
                 <AlertCircle size={16} style={{ flexShrink: 0 }} />
@@ -1062,348 +1293,219 @@ export const Sell = () => {
               </div>
             )}
 
-            {/* Prominent Burgundy Submit for Approval Button */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn btn-burgundy"
-              style={{
-                width: '100%',
-                height: '48px',
-                fontSize: '13px',
-                fontWeight: 600,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                opacity: isSubmitting ? 0.75 : 1,
-                cursor: isSubmitting ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>Submitting for Atelier Review...</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={16} />
-                  <span>
-                    {listingType === 'auction' ? 'Submit for Approval' : 'Publish Marketplace Listing'}
-                  </span>
-                </>
-              )}
-            </button>
+            {/* Submit Actions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                <ShieldCheck size={14} color="var(--accent-burgundy)" />
+                <span>Submitted with status <strong>Pending Approval</strong></span>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-burgundy"
+                disabled={isSubmitting}
+                style={{ minWidth: '220px', height: '46px', fontWeight: 600 }}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Publishing Listing...</span>
+                  </>
+                ) : (
+                  <>
+                    {sellingOption === 'auction' ? <Gavel size={16} /> : <ShoppingBag size={16} />}
+                    <span>
+                      {sellingOption === 'auction' ? 'Submit Live Auction Lot' : 'Submit Shop Product'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </form>
 
-          {/* RIGHT COLUMN: Live Interactive Product Preview */}
-          <div style={{ position: 'sticky', top: '96px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Eye size={15} color="var(--accent-burgundy)" />
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.08em',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  Live Product Preview
-                </span>
-              </div>
+          {/* RIGHT COLUMN: Live Visual Preview Card */}
+          <div style={{ position: 'sticky', top: '100px' }}>
+            <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span className="eyebrow" style={{ margin: 0 }}>Catalog Live Preview</span>
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                Updates in real-time
+                {sellingOption === 'auction' ? 'Upcoming Auction Lot' : 'Marketplace Shop Item'}
               </span>
             </div>
 
-            {/* Preview Card */}
             <div
               style={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-xs)',
                 overflow: 'hidden',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.04)'
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
               }}
             >
-              {/* Main Product Image Container */}
-              <div
-                style={{
-                  width: '100%',
-                  aspectRatio: '4 / 3',
-                  backgroundColor: 'var(--surface-secondary)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
+              {/* Image Preview */}
+              <div style={{ width: '100%', aspectRatio: '4/3', backgroundColor: 'var(--surface-secondary)', position: 'relative' }}>
                 {images.length > 0 ? (
                   <img
                     src={images[0]}
-                    alt={formData.name || 'Authoritative Lot Preview'}
+                    alt="Preview"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
-                    <Camera size={36} strokeWidth={1.5} style={{ opacity: 0.35, marginBottom: '8px' }} />
-                    <span style={{ fontSize: '12px', display: 'block', letterSpacing: '0.02em' }}>
-                      Select or upload photography
-                    </span>
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                    <Camera size={32} style={{ opacity: 0.3 }} />
                   </div>
                 )}
 
-                {/* Handmade / Category Badge */}
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '12px',
-                    left: '12px',
-                    padding: '3px 8px',
-                    backgroundColor: 'rgba(248, 247, 244, 0.94)',
-                    backdropFilter: 'blur(4px)',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--accent-burgundy)',
-                    borderRadius: 'var(--radius-xs)'
-                  }}
-                >
-                  {formData.category}
-                </span>
+                {/* Badge Overlay */}
+                <div style={{ position: 'absolute', top: '12px', left: '12px' }}>
+                  {sellingOption === 'auction' ? (
+                    <span
+                      style={{
+                        backgroundColor: 'rgba(25, 25, 25, 0.85)',
+                        color: '#FFFFFF',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 'var(--radius-xs)',
+                        letterSpacing: '0.06em',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Clock size={11} />
+                      UPCOMING LOT
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        backgroundColor: 'var(--accent-burgundy)',
+                        color: '#FFFFFF',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 'var(--radius-xs)',
+                        letterSpacing: '0.06em'
+                      }}
+                    >
+                      MARKETPLACE
+                    </span>
+                  )}
+                </div>
 
-                {/* Auction Lot Badge */}
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '12px',
-                    right: '12px',
-                    padding: '3px 9px',
-                    backgroundColor: listingType === 'auction' ? 'var(--accent-burgundy)' : '#191919',
-                    color: '#FFFFFF',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    borderRadius: 'var(--radius-xs)'
-                  }}
-                >
-                  {listingType === 'auction' ? 'AUCTION LOT' : 'MARKETPLACE'}
-                </span>
+                {images.length > 1 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '10px',
+                      right: '10px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                      color: '#FFFFFF',
+                      fontSize: '10px',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-xs)'
+                    }}
+                  >
+                    1 of {images.length}
+                  </div>
+                )}
               </div>
 
-              {/* Gallery Thumbnails Strip (if multiple photos attached) */}
-              {images.length > 1 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    backgroundColor: 'var(--bg-primary)',
-                    borderBottom: '1px solid var(--border-color)',
-                    overflowX: 'auto'
-                  }}
-                >
-                  {images.map((img, i) => (
-                    <img
-                      key={i}
-                      src={img}
-                      alt={`Thumb ${i + 1}`}
-                      style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '2px',
-                        objectFit: 'cover',
-                        border: i === 0 ? '1.5px solid var(--accent-burgundy)' : '1px solid var(--border-color)'
-                      }}
-                    />
-                  ))}
+              {/* Information Body */}
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {formData.category}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    {formData.location}
+                  </span>
                 </div>
-              )}
 
-              {/* Body Content */}
-              <div style={{ padding: '22px' }}>
                 <h3
                   style={{
                     fontFamily: 'var(--font-serif)',
-                    fontSize: '1.35rem',
-                    fontWeight: 600,
-                    lineHeight: 1.25,
-                    marginBottom: '4px',
+                    fontSize: '1.25rem',
+                    margin: '0 0 6px 0',
+                    lineHeight: 1.3,
                     color: 'var(--text-primary)'
                   }}
                 >
-                  {formData.name || 'Untitled Object'}
+                  {formData.name || 'Untitled Piece'}
                 </h3>
 
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                  {formData.seller || 'Independent Maker'} • {formData.location || 'Studio'}
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '0 0 16px 0' }}>
+                  By {formData.seller || 'Studio Atelier'}
                 </p>
 
-                {/* Pricing / Bid Block */}
+                {/* Price Display */}
                 <div
                   style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    padding: '12px 14px',
-                    borderRadius: 'var(--radius-xs)',
-                    border: '1px solid var(--border-color)',
-                    marginBottom: '14px'
+                    borderTop: '1px solid var(--border-color)',
+                    borderBottom: '1px solid var(--border-color)',
+                    padding: '12px 0',
+                    marginBottom: '16px'
                   }}
                 >
-                  {listingType === 'auction' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                      <div>
-                        <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block' }}>
-                          Starting Bid
-                        </span>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-burgundy)', fontVariantNumeric: 'tabular-nums' }}>
-                          {formatINR(Number(formData.startingBid) || 0)}
-                        </span>
+                  {sellingOption === 'auction' ? (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Opening Bid</span>
+                        <strong style={{ fontSize: '1.3rem', color: 'var(--accent-burgundy)' }}>
+                          {formatINR(formData.startingBid || 0)}
+                        </strong>
                       </div>
-                      <div>
-                        <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block' }}>
-                          Est. Lot Value
-                        </span>
-                        <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                          {formatINR(Number(formData.price) || 0)}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '4px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Valuation Benchmark</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {formatINR(formData.price || 0)}
                         </span>
                       </div>
                     </div>
                   ) : (
-                    <div>
-                      <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block' }}>
-                        Marketplace Price
-                      </span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                        {formatINR(Number(formData.price) || 0)}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Direct Price</span>
+                      <strong style={{ fontSize: '1.3rem', color: 'var(--text-primary)' }}>
+                        {formatINR(formData.price || 0)}
+                      </strong>
                     </div>
                   )}
                 </div>
 
-                {/* Auction Timing Summary in Preview */}
-                {listingType === 'auction' && calculatedSchedule && (
-                  <div
-                    style={{
-                      borderLeft: '2px solid var(--accent-burgundy)',
-                      paddingLeft: '10px',
-                      marginBottom: '14px',
-                      fontSize: '11px',
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.5
-                    }}
-                  >
-                    <div>
-                      <strong style={{ color: 'var(--text-primary)' }}>Opening:</strong> {calculatedSchedule.startFormatted}
+                {/* Schedule details if auction */}
+                {sellingOption === 'auction' && scheduleSummary && (
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+                      <Calendar size={12} color="var(--accent-burgundy)" />
+                      <span>{scheduleSummary.startFormatted}</span>
                     </div>
-                    <div>
-                      <strong style={{ color: 'var(--text-primary)' }}>Closing:</strong> {calculatedSchedule.endFormatted} ({formData.durationDays} days)
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={12} color="var(--accent-burgundy)" />
+                      <span>Duration: {scheduleSummary.durationHours} hours</span>
                     </div>
                   </div>
                 )}
 
-                {/* Description Preview */}
-                {formData.description && (
-                  <p
-                    style={{
-                      fontSize: 'var(--text-xs)',
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.55,
-                      margin: 0,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    {formData.description}
-                  </p>
-                )}
+                {/* Mock action */}
+                <div
+                  style={{
+                    backgroundColor: 'var(--surface-secondary)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '10px',
+                    textAlign: 'center',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)'
+                  }}
+                >
+                  {sellingOption === 'auction'
+                    ? 'Registration will open upon curator approval'
+                    : 'Available for purchase upon curator approval'}
+                </div>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Existing Submitted Atelier Listings Quick Preview */}
-        {customProducts.length > 0 && (
-          <div style={{ marginTop: '56px', borderTop: '1px solid var(--border-color)', paddingTop: '32px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.35rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                Your Atelier Catalog Submissions ({customProducts.length})
-              </h3>
-              <Link to="/my-products" style={{ fontSize: '12px', color: 'var(--accent-burgundy)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <span>Manage all listings</span>
-                <ArrowRight size={13} />
-              </Link>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-              {customProducts.slice(0, 4).map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '12px 14px',
-                    border: '1px solid var(--border-color)',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 'var(--radius-xs)',
-                    gap: '14px'
-                  }}
-                >
-                  <img
-                    src={item.image}
-                    alt={item.name}
-                    style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: 'var(--radius-xs)' }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <h4 style={{ fontSize: '13px', margin: '0 0 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {item.name}
-                    </h4>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>
-                      {item.category} • {formatINR(item.isAuction ? item.startingBid : item.price)}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      padding: '2px 7px',
-                      borderRadius: 'var(--radius-xs)',
-                      backgroundColor: item.listingStatus === 'active' ? 'var(--badge-shipping-bg)' : 'rgba(234, 228, 220, 0.7)',
-                      color: item.listingStatus === 'active' ? 'var(--badge-shipping-text)' : '#7A6A56',
-                      fontWeight: 600,
-                      textTransform: 'capitalize'
-                    }}
-                  >
-                    {item.listingStatus || 'Pending'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
       </div>
-
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-        @media (max-width: 960px) {
-          .sell-page-grid {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
     </div>
   );
 };

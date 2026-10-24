@@ -152,7 +152,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const isSellerUser = meetingAccess.isSeller;
 
   // Handle bid submit
-  const handleBidSubmit = (e) => {
+  const handleBidSubmit = async (e) => {
     e.preventDefault();
     setBidError('');
 
@@ -167,7 +167,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
       return;
     }
 
-    const res = placeBid(auction.id, amountNum, user.name, user.id);
+    const res = await placeBid(auction.id, amountNum, user.name, user.id);
     if (!res.success) {
       setBidError(res.error || 'Bid rejected by authoritative server.');
     } else {
