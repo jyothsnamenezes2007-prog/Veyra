@@ -919,7 +919,7 @@
       "minIncrement": 2500,
       "bidCount": 17,
       "endsInSeconds": 9900,
-      "status": "active",
+      "status": "ended",
       "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
       "images": [
         "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
@@ -978,8 +978,16 @@
       "scheduledTimestamp": 1792822232864,
       "endTimestamp": 1792832192864,
       "endTime": 1792832192864,
-      "remainingSeconds": 1291,
-      "winner": null
+      "remainingSeconds": 0,
+      "winner": {
+        "bidder": "NN25CSE171 LAHARI R PRABHU",
+        "bidderId": "4b2fdae1-3e31-445f-a385-0d935b7d9aac",
+        "amount": 101000,
+        "timestamp": 1792830387248,
+        "time": "Just now"
+      },
+      "winningBid": 101000,
+      "result": "sold"
     },
     {
       "id": "auc-2",

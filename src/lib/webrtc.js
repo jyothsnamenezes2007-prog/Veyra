@@ -1,7 +1,7 @@
 // VEYRA WebRTC Video & Audio Signaling Service
 // Genuine peer-to-peer real-time communication between authenticated seller & confirmed winning buyer
 
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase.js';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -10,7 +10,7 @@ const ICE_SERVERS = [
 ];
 
 // Configurable optional TURN credentials via environment variables
-if (import.meta.env.VITE_TURN_SERVER_URL) {
+if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TURN_SERVER_URL) {
   ICE_SERVERS.push({
     urls: import.meta.env.VITE_TURN_SERVER_URL,
     username: import.meta.env.VITE_TURN_USERNAME || '',
@@ -33,6 +33,8 @@ export class WebRTCSignaling {
     this.userId = userId;
     this.role = role; // 'buyer' or 'seller'
     this.listeners = new Set();
+    this.seenMsgIds = new Set();
+    this.recentMsgIds = [];
     this.channelName = `veyra_webrtc_call_${auctionId}`;
 
     // 1. BroadcastChannel for local/multi-tab peer testing
@@ -46,7 +48,7 @@ export class WebRTCSignaling {
       };
     }
 
-    // 2. Storage event fallback
+    // 2. Storage event fallback for cross-process tab sync
     this.storageListener = (event) => {
       if (event.key === this.channelName && event.newValue) {
         try {
@@ -59,7 +61,9 @@ export class WebRTCSignaling {
         }
       }
     };
-    window.addEventListener('storage', this.storageListener);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', this.storageListener);
+    }
 
     // 3. Supabase Realtime broadcast channel when credentials exist
     if (isSupabaseConfigured && supabase) {
@@ -83,6 +87,21 @@ export class WebRTCSignaling {
   }
 
   _dispatch(payload) {
+    if (!payload) return;
+
+    // Deduplicate messages across BroadcastChannel, localStorage, and Supabase
+    if (payload.msgId) {
+      if (this.seenMsgIds.has(payload.msgId)) {
+        return; // drop duplicate delivery
+      }
+      this.seenMsgIds.add(payload.msgId);
+      this.recentMsgIds.push(payload.msgId);
+      if (this.recentMsgIds.length > 200) {
+        const oldest = this.recentMsgIds.shift();
+        this.seenMsgIds.delete(oldest);
+      }
+    }
+
     this.listeners.forEach((cb) => {
       try {
         cb(payload);
@@ -93,7 +112,9 @@ export class WebRTCSignaling {
   }
 
   send(type, data = {}) {
+    const msgId = `${this.userId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const payload = {
+      msgId,
       type,
       data,
       auctionId: this.auctionId,
@@ -102,38 +123,58 @@ export class WebRTCSignaling {
       timestamp: Date.now()
     };
 
+    // Track own message ID to prevent processing any self-reflections
+    this.seenMsgIds.add(msgId);
+    this.recentMsgIds.push(msgId);
+    if (this.recentMsgIds.length > 200) {
+      const oldest = this.recentMsgIds.shift();
+      this.seenMsgIds.delete(oldest);
+    }
+
     // Broadcast channel
+    let broadcastSent = false;
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage(payload);
+        broadcastSent = true;
       } catch (e) {
         console.warn('BroadcastChannel error', e);
       }
     }
 
-    // Storage fallback for cross-process tab sync
-    try {
-      localStorage.setItem(this.channelName, JSON.stringify(payload));
-    } catch (e) {
-      // ignore
+    // Storage fallback only if BroadcastChannel is not available
+    if (!broadcastSent && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(this.channelName, JSON.stringify(payload));
+      } catch (e) {
+        // ignore
+      }
     }
 
     // Supabase Realtime Broadcast
     if (this.supabaseChannel) {
-      this.supabaseChannel.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload
-      });
+      try {
+        this.supabaseChannel.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload
+        });
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
   destroy() {
     this.listeners.clear();
+    this.seenMsgIds.clear();
+    this.recentMsgIds = [];
     if (this.broadcastChannel) {
       this.broadcastChannel.close();
     }
-    window.removeEventListener('storage', this.storageListener);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', this.storageListener);
+    }
     if (this.supabaseChannel && supabase) {
       supabase.removeChannel(this.supabaseChannel);
     }
