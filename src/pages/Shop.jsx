@@ -73,7 +73,7 @@ export const Shop = () => {
 
   // Filtered & sorted products list (independent of live auctions)
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => !p.isAuction && (!p.listingStatus || p.listingStatus === 'active')); // Dedicated shop marketplace items
+    let result = products.filter((p) => !p.isAuction && p.type !== 'auction' && (!p.listingStatus || p.listingStatus === 'active')); // Dedicated shop marketplace items
 
     // Category filter
     if (activeCategory !== 'all') {
