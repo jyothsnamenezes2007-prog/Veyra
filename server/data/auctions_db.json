@@ -1,0 +1,1564 @@
+{
+  "auctions": [
+    {
+      "id": "auc-lot-1792830492406",
+      "productId": "custom-1792830492405",
+      "name": "Archival Chandigarh Teak & Cane Lounge Chair",
+      "maker": "Pierre Jeanneret Workshop",
+      "seller": "NN25CSE154 K ANURADHA PAI",
+      "sellerId": "99c15fd0-ad89-497d-941c-244f504a8712",
+      "location": "Chandigarh, India",
+      "provenance": "Certified masterwork from Chandigarh architectural restoration",
+      "category": "Handmade",
+      "startingBid": 28000,
+      "currentBid": 28000,
+      "estimatedValue": 45000,
+      "minIncrement": 500,
+      "bidCount": 0,
+      "startTimestamp": 1792931400000,
+      "endTimestamp": 1793190600000,
+      "startDate": "2026-10-25",
+      "startTime": "18:00",
+      "endDate": "2026-10-28",
+      "endTime": "18:00",
+      "status": "scheduled",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Original solid Burma teak framework with renewed hand-woven natural cane seating. Features documented stenciled archival inventory markings on the rear apron.",
+      "materials": "Aged reclaimed Burma teak, natural hand-woven cane",
+      "dimensions": "78cm H × 51cm W × 54cm D",
+      "condition": "Pristine Museum Restored",
+      "authenticityCertificate": "Certificate of Provenance & Studio Hallmark",
+      "createdAt": "2026-10-24T08:28:12.406Z",
+      "updatedAt": "2026-10-24T08:28:12.406Z"
+    },
+    {
+      "id": "auc-lot-1792830480912",
+      "productId": "custom-1792830480845",
+      "name": "Archival Chandigarh Teak & Cane Lounge Chair",
+      "maker": "Pierre Jeanneret Workshop",
+      "seller": "NN25CSE154 K ANURADHA PAI",
+      "sellerId": "99c15fd0-ad89-497d-941c-244f504a8712",
+      "location": "Chandigarh, India",
+      "provenance": "Certified masterwork from Chandigarh architectural restoration",
+      "category": "Handmade",
+      "startingBid": 28000,
+      "currentBid": 28000,
+      "estimatedValue": 45000,
+      "minIncrement": 500,
+      "bidCount": 0,
+      "startTimestamp": 1792830600000,
+      "endTimestamp": 1792830780000,
+      "startDate": "2026-10-24",
+      "startTime": "14:00",
+      "endDate": "2026-10-24",
+      "endTime": "14:03",
+      "status": "scheduled",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Original solid Burma teak framework with renewed hand-woven natural cane seating. Features documented stenciled archival inventory markings on the rear apron.",
+      "materials": "Aged reclaimed Burma teak, natural hand-woven cane",
+      "dimensions": "78cm H × 51cm W × 54cm D",
+      "condition": "Pristine Museum Restored",
+      "authenticityCertificate": "Certificate of Provenance & Studio Hallmark",
+      "createdAt": "2026-10-24T08:28:00.912Z",
+      "updatedAt": "2026-10-24T08:28:00.912Z"
+    },
+    {
+      "id": "test-auc-1792825779001",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 2500,
+      "minIncrement": 50,
+      "bidCount": 8,
+      "startTimestamp": 1792825719001,
+      "endTimestamp": 1792829379001,
+      "status": "active",
+      "updatedAt": "2026-10-24T07:09:39.034Z"
+    },
+    {
+      "id": "test-auc-1792825614096",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 2500,
+      "minIncrement": 50,
+      "bidCount": 8,
+      "startTimestamp": 1792825554096,
+      "endTimestamp": 1792829214096,
+      "status": "active",
+      "updatedAt": "2026-10-24T07:06:54.143Z"
+    },
+    {
+      "id": "test-auc-1792825600805",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 2500,
+      "minIncrement": 50,
+      "bidCount": 8,
+      "startTimestamp": 1792825540805,
+      "endTimestamp": 1792829200805,
+      "status": "active",
+      "updatedAt": "2026-10-24T07:06:40.851Z"
+    },
+    {
+      "id": "test-auc-1792825449844",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 1050,
+      "minIncrement": 50,
+      "bidCount": 1,
+      "startTimestamp": 1792825389844,
+      "endTimestamp": 1792829049844,
+      "status": "active",
+      "updatedAt": "2026-10-24T07:04:09.919Z"
+    },
+    {
+      "id": "auc-lot-1792812450051",
+      "productId": "custom-1792812449991",
+      "name": "Archival Chandigarh Teak & Cane Lounge Chair",
+      "maker": "Pierre Jeanneret Workshop",
+      "seller": "NN25CSE154 K ANURADHA PAI",
+      "sellerId": "99c15fd0-ad89-497d-941c-244f504a8712",
+      "location": "Chandigarh, India",
+      "provenance": "Certified masterwork from Chandigarh architectural restoration",
+      "category": "Handmade",
+      "startingBid": 28000,
+      "currentBid": 28000,
+      "estimatedValue": 45000,
+      "minIncrement": 500,
+      "bidCount": 0,
+      "startTimestamp": 1792931400000,
+      "endTimestamp": 1793190600000,
+      "startDate": "2026-10-25",
+      "startTime": "18:00",
+      "endDate": "2026-10-28",
+      "endTime": "18:00",
+      "status": "scheduled",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Original solid Burma teak framework with renewed hand-woven natural cane seating. Features documented stenciled archival inventory markings on the rear apron.",
+      "materials": "Aged reclaimed Burma teak, natural hand-woven cane",
+      "dimensions": "78cm H × 51cm W × 54cm D",
+      "condition": "Pristine Museum Restored",
+      "authenticityCertificate": "Certificate of Provenance & Studio Hallmark",
+      "createdAt": "2026-10-24T03:27:30.051Z",
+      "updatedAt": "2026-10-24T03:27:30.051Z"
+    },
+    {
+      "id": "auc-lot-1792782918993",
+      "productId": "custom-1792782918966",
+      "name": "Archival Chandigarh Teak & Cane Lounge Chair",
+      "maker": "Pierre Jeanneret Workshop",
+      "seller": "Anuradha Pai",
+      "sellerId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+      "location": "Chandigarh, India",
+      "provenance": "Certified masterwork from Chandigarh architectural restoration",
+      "category": "Handmade",
+      "startingBid": 28000,
+      "currentBid": 28000,
+      "estimatedValue": 45000,
+      "minIncrement": 500,
+      "bidCount": 0,
+      "startTimestamp": 1792826100000,
+      "endTimestamp": 1792826280000,
+      "startDate": "2026-10-24",
+      "startTime": "12:45",
+      "endDate": "2026-10-24",
+      "endTime": "12:48",
+      "status": "scheduled",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Original solid Burma teak framework with renewed hand-woven natural cane seating. Features documented stenciled archival inventory markings on the rear apron.",
+      "materials": "Aged reclaimed Burma teak, natural hand-woven cane",
+      "dimensions": "78cm H × 51cm W × 54cm D",
+      "condition": "Pristine Museum Restored",
+      "authenticityCertificate": "Certificate of Provenance & Studio Hallmark",
+      "createdAt": "2026-10-23T19:15:18.994Z",
+      "updatedAt": "2026-10-23T19:15:18.995Z"
+    },
+    {
+      "id": "test-auc-1792781522443",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 2500,
+      "minIncrement": 50,
+      "bidCount": 8,
+      "startTimestamp": 1792781462443,
+      "endTimestamp": 1792785122443,
+      "status": "active",
+      "updatedAt": "2026-10-23T18:52:02.484Z"
+    },
+    {
+      "id": "test-auc-1792781494350",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 1500,
+      "minIncrement": 50,
+      "bidCount": 7,
+      "startTimestamp": 1792781434350,
+      "endTimestamp": 1792785094350,
+      "status": "active",
+      "updatedAt": "2026-10-23T18:51:34.389Z"
+    },
+    {
+      "id": "test-auc-1792781463638",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 1500,
+      "minIncrement": 50,
+      "bidCount": 7,
+      "startTimestamp": 1792781403638,
+      "endTimestamp": 1792785063638,
+      "status": "active",
+      "updatedAt": "2026-10-23T18:51:03.676Z"
+    },
+    {
+      "id": "test-auc-1792781411297",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 1500,
+      "minIncrement": 50,
+      "bidCount": 7,
+      "startTimestamp": 1792781351297,
+      "endTimestamp": 1792785011297,
+      "status": "active",
+      "updatedAt": "2026-10-23T18:50:11.332Z"
+    },
+    {
+      "id": "test-auc-1792781367549",
+      "name": "Test Artisan Teak Bench",
+      "seller": "Studio Craft",
+      "sellerId": "seller-artisan-123",
+      "startingBid": 1000,
+      "currentBid": 1050,
+      "minIncrement": 50,
+      "bidCount": 1,
+      "startTimestamp": 1792781307549,
+      "endTimestamp": 1792784967549,
+      "status": "active",
+      "updatedAt": "2026-10-23T18:49:27.590Z"
+    },
+    {
+      "id": "auc-1",
+      "productId": "prod-auc-1",
+      "name": "Archival Chandigarh Teak & Cane V-Leg Chair (c. 1956)",
+      "maker": "Pierre Jeanneret Workshop",
+      "seller": "Pierre Jeanneret Workshop",
+      "sellerId": "seller-jeanneret",
+      "provenance": "Punjab Administrative Quarters, Chandigarh, 1956",
+      "category": "Vintage Finds",
+      "startingBid": 65000,
+      "currentBid": 98500,
+      "estimatedValue": 97500,
+      "minIncrement": 2500,
+      "bidCount": 5,
+      "startTimestamp": 1792777251710,
+      "endTimestamp": 1792787151710,
+      "status": "active",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Original solid Burma teak framework with renewed natural hand-woven cane seating. Features documented stenciled archival inventory numbering on the rear apron.",
+      "materials": "",
+      "dimensions": "78cm H × 51cm W × 54cm D",
+      "condition": "Museum restored; authentic minor surface patina consistent with age.",
+      "authenticityCertificate": "Certificate of Archival Authenticity by European Design Council",
+      "createdAt": "2026-10-23T18:40:51.711Z",
+      "updatedAt": "2026-10-23T19:12:43.935Z"
+    },
+    {
+      "id": "auc-2",
+      "productId": "prod-auc-2",
+      "name": "Monolithic Carved Basalt Contemplation Basin",
+      "maker": "Atelier Kuroda",
+      "seller": "Atelier Kuroda",
+      "sellerId": "seller-kuroda",
+      "provenance": "Nagano Prefecture, Japan, 2023",
+      "category": "Collectibles",
+      "startingBid": 45000,
+      "currentBid": 94500,
+      "estimatedValue": 67500,
+      "minIncrement": 2000,
+      "bidCount": 16,
+      "startTimestamp": 1792777251710,
+      "endTimestamp": 1792792671710,
+      "status": "active",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1590736969955-71cc94801759?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1578749556568-bc2c40e68b61?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1612196808214-b8e1d6145a8c?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Sculpted from a single volcanic basalt boulder. The interior is hand-ground to a mirror sheen while preserving raw mineral fissures across the outer perimeter.",
+      "materials": "",
+      "dimensions": "38cm Ø × 16cm H (approx 22kg)",
+      "condition": "Pristine studio masterwork, signed by stone sculptor.",
+      "authenticityCertificate": "Carved signature and seal by Master Kuroda",
+      "createdAt": "2026-10-23T18:40:51.711Z",
+      "updatedAt": "2026-10-23T19:11:03.966Z"
+    },
+    {
+      "id": "auc-3",
+      "productId": "prod-auc-3",
+      "name": "Repoussé Sterling Silver Water Ewer & Basin Set",
+      "maker": "Master Craftsman H. Raman",
+      "seller": "Master Craftsman H. Raman",
+      "sellerId": "seller-raman",
+      "provenance": "Thanjavur, Tamil Nadu",
+      "category": "Collectibles",
+      "startingBid": 80000,
+      "currentBid": 112000,
+      "estimatedValue": 120000,
+      "minIncrement": 3000,
+      "bidCount": 3,
+      "startTimestamp": 1792777251710,
+      "endTimestamp": 1792781571710,
+      "status": "active",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1534349762230-e0cadf78f5da?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1534349762230-e0cadf78f5da?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1590736969955-71cc94801759?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Forged from 925 sterling silver using traditional south Indian chased repoussé motifs depicting stylized temple lotus petals and flowing water rhythms.",
+      "materials": "",
+      "dimensions": "Ewer 32cm H; Basin 36cm Ø (Total weight: 1,420g)",
+      "condition": "Excellent preservation, hallmarks authenticated.",
+      "authenticityCertificate": "925 Sterling Silver Government Hallmark & Guild Certification",
+      "createdAt": "2026-10-23T18:40:51.711Z",
+      "updatedAt": "2026-10-23T18:40:51.711Z"
+    },
+    {
+      "id": "auc-4",
+      "productId": "prod-auc-4",
+      "name": "Precision Chased Brass Astronomical Astrolabe (c. 1890)",
+      "maker": "Royal Instrument Guild",
+      "seller": "Royal Instrument Guild",
+      "sellerId": "seller-guild",
+      "provenance": "Private Observatory Collection, Jaipur",
+      "category": "Collectibles",
+      "startingBid": 42000,
+      "currentBid": 58000,
+      "estimatedValue": 63000,
+      "minIncrement": 2000,
+      "bidCount": 3,
+      "startTimestamp": 1792784451710,
+      "endTimestamp": 1792791991710,
+      "status": "scheduled",
+      "approvalStatus": "approved",
+      "winner": null,
+      "image": "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80",
+      "images": [
+        "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1534349762230-e0cadf78f5da?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=1000&q=80",
+        "https://images.unsplash.com/photo-1590736969955-71cc94801759?auto=format&fit=crop&w=1000&q=80"
+      ],
+      "description": "Brass astrolabe quadrant featuring intricately cut rete showing major northern constellations, hand-stamped altitude circles, and original suspension ring.",
+      "materials": "",
+      "dimensions": "21cm Ø × 1.2cm thick (Weight: 890g)",
+      "condition": "Intact historical mechanism with warm antique brass patina.",
+      "authenticityCertificate": "Heritage Instrument Guild Certificate of Antiquity",
+      "createdAt": "2026-10-23T18:40:51.711Z",
+      "updatedAt": "2026-10-23T18:40:51.711Z"
+    }
+  ],
+  "bids": {
+    "auc-1": [
+      {
+        "id": "bid-1792782763933-nw0g",
+        "auctionId": "auc-1",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 98500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792782763933
+      },
+      {
+        "id": "b-1",
+        "auctionId": "auc-1",
+        "bidder": "A. Singhania",
+        "bidderId": "bidder-0",
+        "amount": 96000,
+        "bidType": "manual",
+        "timestamp": 1792780671703,
+        "time": "3 mins ago"
+      },
+      {
+        "id": "b-2",
+        "auctionId": "auc-1",
+        "bidder": "Collector_90",
+        "bidderId": "bidder-1",
+        "amount": 93500,
+        "bidType": "manual",
+        "timestamp": 1792780011705,
+        "time": "14 mins ago"
+      },
+      {
+        "id": "b-3",
+        "auctionId": "auc-1",
+        "bidder": "Studio K.O.",
+        "bidderId": "bidder-2",
+        "amount": 90000,
+        "bidType": "manual",
+        "timestamp": 1792778571705,
+        "time": "38 mins ago"
+      },
+      {
+        "id": "b-4",
+        "auctionId": "auc-1",
+        "bidder": "V. Mehta",
+        "bidderId": "bidder-3",
+        "amount": 85000,
+        "bidType": "manual",
+        "timestamp": 1792777251705,
+        "time": "1 hour ago"
+      }
+    ],
+    "auc-2": [
+      {
+        "id": "ab-bid-1792782663962-3pl8",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 94500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663962
+      },
+      {
+        "id": "ab-bid-1792782663949-pkbi",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 92500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663949
+      },
+      {
+        "id": "ab-bid-1792782663946-6zk4",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 90500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663946
+      },
+      {
+        "id": "ab-bid-1792782663918-gdwp",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 88500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663919
+      },
+      {
+        "id": "ab-bid-1792782663912-diqc",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 86500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663912
+      },
+      {
+        "id": "ab-bid-1792782663901-ann9",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 84500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663901
+      },
+      {
+        "id": "ab-bid-1792782663894-uy97",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 82500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663894
+      },
+      {
+        "id": "ab-bid-1792782663870-3y15",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 80500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663870
+      },
+      {
+        "id": "ab-bid-1792782663862-mpa3",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 78500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663862
+      },
+      {
+        "id": "ab-bid-1792782663848-ltrl",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 76500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792782663849
+      },
+      {
+        "id": "bid-1792782251590-ax2m",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 74500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792782251590
+      },
+      {
+        "id": "bid-1792782153069-r4bs",
+        "auctionId": "auc-2",
+        "bidder": "Anuradha Pai",
+        "bidderId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "amount": 72500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792782153069
+      },
+      {
+        "id": "bid-1792781874322-q0k2",
+        "auctionId": "auc-2",
+        "bidder": "NN25CSE154 K ANURADHA PAI",
+        "bidderId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "amount": 70500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781874322
+      },
+      {
+        "id": "b-1",
+        "auctionId": "auc-2",
+        "bidder": "Elena R.",
+        "bidderId": "bidder-0",
+        "amount": 68500,
+        "bidType": "manual",
+        "timestamp": 1792780371705,
+        "time": "8 mins ago"
+      },
+      {
+        "id": "b-2",
+        "auctionId": "auc-2",
+        "bidder": "Marcus T.",
+        "bidderId": "bidder-1",
+        "amount": 66000,
+        "bidType": "manual",
+        "timestamp": 1792779531705,
+        "time": "22 mins ago"
+      },
+      {
+        "id": "b-3",
+        "auctionId": "auc-2",
+        "bidder": "T. Nambiar",
+        "bidderId": "bidder-2",
+        "amount": 62000,
+        "bidType": "manual",
+        "timestamp": 1792777251705,
+        "time": "1 hour ago"
+      }
+    ],
+    "auc-3": [
+      {
+        "id": "b-1",
+        "auctionId": "auc-3",
+        "bidder": "Heritage Fund",
+        "bidderId": "bidder-0",
+        "amount": 112000,
+        "bidType": "manual",
+        "timestamp": 1792780791705,
+        "time": "1 min ago"
+      },
+      {
+        "id": "b-2",
+        "auctionId": "auc-3",
+        "bidder": "S. Kirloskar",
+        "bidderId": "bidder-1",
+        "amount": 108000,
+        "bidType": "manual",
+        "timestamp": 1792780431705,
+        "time": "7 mins ago"
+      },
+      {
+        "id": "b-3",
+        "auctionId": "auc-3",
+        "bidder": "Collector_90",
+        "bidderId": "bidder-2",
+        "amount": 104000,
+        "bidType": "manual",
+        "timestamp": 1792779351705,
+        "time": "25 mins ago"
+      }
+    ],
+    "auc-4": [
+      {
+        "id": "b-1",
+        "auctionId": "auc-4",
+        "bidder": "Aditi V.",
+        "bidderId": "bidder-0",
+        "amount": 58000,
+        "bidType": "manual",
+        "timestamp": 1792780551705,
+        "time": "5 mins ago"
+      },
+      {
+        "id": "b-2",
+        "auctionId": "auc-4",
+        "bidder": "S. Banerjee",
+        "bidderId": "bidder-1",
+        "amount": 56000,
+        "bidType": "manual",
+        "timestamp": 1792779711705,
+        "time": "19 mins ago"
+      },
+      {
+        "id": "b-3",
+        "auctionId": "auc-4",
+        "bidder": "VintageCurator",
+        "bidderId": "bidder-2",
+        "amount": 52000,
+        "bidType": "manual",
+        "timestamp": 1792778331705,
+        "time": "42 mins ago"
+      }
+    ],
+    "test-auc-1792781367549": [
+      {
+        "id": "bid-1792781367588-hsqo",
+        "auctionId": "test-auc-1792781367549",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781367588
+      }
+    ],
+    "test-auc-1792781411297": [
+      {
+        "id": "ab-bid-1792781411332-nkzj",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781411332
+      },
+      {
+        "id": "ab-bid-1792781411330-6ydm",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781411330
+      },
+      {
+        "id": "ab-bid-1792781411329-j8w7",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781411329
+      },
+      {
+        "id": "ab-bid-1792781411327-stpv",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781411327
+      },
+      {
+        "id": "ab-bid-1792781411325-yawh",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781411325
+      },
+      {
+        "id": "bid-1792781411323-vjvx",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781411323
+      },
+      {
+        "id": "bid-1792781411318-0v6l",
+        "auctionId": "test-auc-1792781411297",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781411318
+      }
+    ],
+    "test-auc-1792781463638": [
+      {
+        "id": "ab-bid-1792781463675-clnx",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781463675
+      },
+      {
+        "id": "ab-bid-1792781463671-yyvp",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781463671
+      },
+      {
+        "id": "ab-bid-1792781463668-92o0",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781463668
+      },
+      {
+        "id": "ab-bid-1792781463667-e5zh",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781463667
+      },
+      {
+        "id": "ab-bid-1792781463666-iy6h",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781463666
+      },
+      {
+        "id": "bid-1792781463664-f7ys",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781463664
+      },
+      {
+        "id": "bid-1792781463659-s6ap",
+        "auctionId": "test-auc-1792781463638",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781463659
+      }
+    ],
+    "test-auc-1792781494350": [
+      {
+        "id": "ab-bid-1792781494388-jexb",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781494388
+      },
+      {
+        "id": "ab-bid-1792781494387-jotv",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781494387
+      },
+      {
+        "id": "ab-bid-1792781494385-dtv6",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781494385
+      },
+      {
+        "id": "ab-bid-1792781494384-1t67",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781494384
+      },
+      {
+        "id": "ab-bid-1792781494381-qcxu",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781494381
+      },
+      {
+        "id": "bid-1792781494379-9gev",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781494379
+      },
+      {
+        "id": "bid-1792781494374-b23h",
+        "auctionId": "test-auc-1792781494350",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781494374
+      }
+    ],
+    "test-auc-1792781522443": [
+      {
+        "id": "bid-1792781522483-v9p8",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector D",
+        "bidderId": "buyer-user-d",
+        "amount": 2500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781522483
+      },
+      {
+        "id": "ab-bid-1792781522478-h8xv",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781522478
+      },
+      {
+        "id": "ab-bid-1792781522476-dur1",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781522476
+      },
+      {
+        "id": "ab-bid-1792781522475-dn69",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781522475
+      },
+      {
+        "id": "ab-bid-1792781522473-njvz",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781522473
+      },
+      {
+        "id": "ab-bid-1792781522470-s92z",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792781522470
+      },
+      {
+        "id": "bid-1792781522469-t5ri",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781522469
+      },
+      {
+        "id": "bid-1792781522465-y3ut",
+        "auctionId": "test-auc-1792781522443",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792781522465
+      }
+    ],
+    "auc-lot-1792782918993": [],
+    "auc-lot-1792812450051": [],
+    "test-auc-1792825449844": [
+      {
+        "id": "bid-1792825449918-775k",
+        "auctionId": "test-auc-1792825449844",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825449918
+      }
+    ],
+    "test-auc-1792825600805": [
+      {
+        "id": "bid-1792825600849-njth",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector D",
+        "bidderId": "buyer-user-d",
+        "amount": 2500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825600849
+      },
+      {
+        "id": "ab-bid-1792825600847-edqp",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825600847
+      },
+      {
+        "id": "ab-bid-1792825600845-cckh",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825600845
+      },
+      {
+        "id": "ab-bid-1792825600842-jo3q",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825600842
+      },
+      {
+        "id": "ab-bid-1792825600834-v8jj",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825600834
+      },
+      {
+        "id": "ab-bid-1792825600833-m8bx",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825600833
+      },
+      {
+        "id": "bid-1792825600830-clrb",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825600830
+      },
+      {
+        "id": "bid-1792825600826-ycv6",
+        "auctionId": "test-auc-1792825600805",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825600826
+      }
+    ],
+    "test-auc-1792825614096": [
+      {
+        "id": "bid-1792825614143-wk4j",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector D",
+        "bidderId": "buyer-user-d",
+        "amount": 2500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825614143
+      },
+      {
+        "id": "ab-bid-1792825614139-l1b5",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825614139
+      },
+      {
+        "id": "ab-bid-1792825614137-011f",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825614137
+      },
+      {
+        "id": "ab-bid-1792825614135-nxwh",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825614135
+      },
+      {
+        "id": "ab-bid-1792825614132-0dh3",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825614132
+      },
+      {
+        "id": "ab-bid-1792825614131-yb55",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825614131
+      },
+      {
+        "id": "bid-1792825614127-yahx",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825614127
+      },
+      {
+        "id": "bid-1792825614121-043x",
+        "auctionId": "test-auc-1792825614096",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825614121
+      }
+    ],
+    "test-auc-1792825779001": [
+      {
+        "id": "bid-1792825779033-rmiy",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector D",
+        "bidderId": "buyer-user-d",
+        "amount": 2500,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825779033
+      },
+      {
+        "id": "ab-bid-1792825779031-36cg",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1500,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825779031
+      },
+      {
+        "id": "ab-bid-1792825779029-77at",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1400,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825779029
+      },
+      {
+        "id": "ab-bid-1792825779028-e6o2",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1350,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825779028
+      },
+      {
+        "id": "ab-bid-1792825779027-sabf",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector C",
+        "bidderId": "buyer-user-c",
+        "amount": 1250,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825779027
+      },
+      {
+        "id": "ab-bid-1792825779026-8ak4",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector B",
+        "bidderId": "buyer-user-b",
+        "amount": 1200,
+        "bidType": "auto",
+        "time": "Auto-Bid",
+        "timestamp": 1792825779026
+      },
+      {
+        "id": "bid-1792825779023-un2i",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-a",
+        "amount": 1100,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825779023
+      },
+      {
+        "id": "bid-1792825779020-hptq",
+        "auctionId": "test-auc-1792825779001",
+        "bidder": "Collector A",
+        "bidderId": "buyer-user-1",
+        "amount": 1050,
+        "bidType": "manual",
+        "time": "Just now",
+        "timestamp": 1792825779020
+      }
+    ],
+    "auc-lot-1792830480912": [],
+    "auc-lot-1792830492406": []
+  },
+  "autoBids": {
+    "auc-1": [],
+    "auc-2": [
+      {
+        "auctionId": "auc-2",
+        "userId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "userName": "NN25CSE154 K ANURADHA PAI",
+        "maxLimit": 950500,
+        "preferredIncrement": 2000,
+        "isActive": true,
+        "createdAt": "2026-10-23T19:06:55.951Z",
+        "updatedAt": "2026-10-23T19:06:55.951Z"
+      },
+      {
+        "auctionId": "auc-2",
+        "userId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "userName": "Anuradha Pai",
+        "maxLimit": 94500,
+        "preferredIncrement": 2000,
+        "isActive": true,
+        "createdAt": "2026-10-23T19:11:03.846Z",
+        "updatedAt": "2026-10-23T19:11:03.846Z"
+      }
+    ],
+    "auc-3": [],
+    "auc-4": [],
+    "test-auc-1792781367549": [],
+    "test-auc-1792781411297": [
+      {
+        "auctionId": "test-auc-1792781411297",
+        "userId": "buyer-user-b",
+        "userName": "Collector B",
+        "maxLimit": 2000,
+        "preferredIncrement": 100,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:50:11.321Z",
+        "updatedAt": "2026-10-23T18:50:11.321Z"
+      },
+      {
+        "auctionId": "test-auc-1792781411297",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:50:11.322Z",
+        "updatedAt": "2026-10-23T18:50:11.322Z"
+      }
+    ],
+    "test-auc-1792781463638": [
+      {
+        "auctionId": "test-auc-1792781463638",
+        "userId": "buyer-user-b",
+        "userName": "Collector B",
+        "maxLimit": 2000,
+        "preferredIncrement": 100,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:51:03.662Z",
+        "updatedAt": "2026-10-23T18:51:03.662Z"
+      },
+      {
+        "auctionId": "test-auc-1792781463638",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:51:03.663Z",
+        "updatedAt": "2026-10-23T18:51:03.663Z"
+      }
+    ],
+    "test-auc-1792781494350": [
+      {
+        "auctionId": "test-auc-1792781494350",
+        "userId": "buyer-user-b",
+        "userName": "Collector B",
+        "maxLimit": 2000,
+        "preferredIncrement": 100,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:51:34.378Z",
+        "updatedAt": "2026-10-23T18:51:34.378Z"
+      },
+      {
+        "auctionId": "test-auc-1792781494350",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:51:34.378Z",
+        "updatedAt": "2026-10-23T18:51:34.378Z"
+      }
+    ],
+    "test-auc-1792781522443": [
+      {
+        "auctionId": "test-auc-1792781522443",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-23T18:52:02.468Z",
+        "updatedAt": "2026-10-23T18:52:02.468Z"
+      }
+    ],
+    "auc-lot-1792782918993": [],
+    "auc-lot-1792812450051": [],
+    "test-auc-1792825449844": [
+      {
+        "auctionId": "test-auc-1792825449844",
+        "userId": "buyer-user-b",
+        "userName": "Collector B",
+        "maxBidLimit": 2000,
+        "preferredIncrement": 100,
+        "enabled": true,
+        "createdAt": "2026-10-24T07:04:09.922Z",
+        "updatedAt": "2026-10-24T07:04:09.922Z"
+      },
+      {
+        "auctionId": "test-auc-1792825449844",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxBidLimit": 1500,
+        "preferredIncrement": 50,
+        "enabled": true,
+        "createdAt": "2026-10-24T07:04:09.923Z",
+        "updatedAt": "2026-10-24T07:04:09.923Z"
+      }
+    ],
+    "test-auc-1792825600805": [
+      {
+        "auctionId": "test-auc-1792825600805",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-24T07:06:40.829Z",
+        "updatedAt": "2026-10-24T07:06:40.829Z"
+      }
+    ],
+    "test-auc-1792825614096": [
+      {
+        "auctionId": "test-auc-1792825614096",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-24T07:06:54.125Z",
+        "updatedAt": "2026-10-24T07:06:54.125Z"
+      }
+    ],
+    "test-auc-1792825779001": [
+      {
+        "auctionId": "test-auc-1792825779001",
+        "userId": "buyer-user-c",
+        "userName": "Collector C",
+        "maxLimit": 1500,
+        "preferredIncrement": 50,
+        "isActive": true,
+        "createdAt": "2026-10-24T07:09:39.023Z",
+        "updatedAt": "2026-10-24T07:09:39.023Z"
+      }
+    ],
+    "auc-lot-1792830480912": [],
+    "auc-lot-1792830492406": []
+  },
+  "comments": {
+    "auc-1": [
+      {
+        "id": "c-auc-1-1",
+        "auctionId": "auc-1",
+        "user": "ArchivalCurator",
+        "userId": "curator-1",
+        "message": "Condition report and studio cataloguing verified.",
+        "timestamp": 1792779951710,
+        "time": "15m ago"
+      }
+    ],
+    "auc-2": [
+      {
+        "id": "c-auc-2-1",
+        "auctionId": "auc-2",
+        "user": "ArchivalCurator",
+        "userId": "curator-1",
+        "message": "Condition report and studio cataloguing verified.",
+        "timestamp": 1792779951710,
+        "time": "15m ago"
+      },
+      {
+        "id": "c-1792782173625-jvo2",
+        "auctionId": "auc-2",
+        "user": "Anuradha Pai",
+        "userId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "message": "gooodddd",
+        "timestamp": 1792782173627,
+        "time": "Just now"
+      },
+      {
+        "id": "c-1792782209929-j9ct",
+        "auctionId": "auc-2",
+        "user": "Anuradha Pai",
+        "userId": "8385b2e0-1e46-40b3-b3f4-ae939ce24e0d",
+        "message": "besst",
+        "timestamp": 1792782209931,
+        "time": "Just now"
+      },
+      {
+        "id": "c-1792782258071-uzl8",
+        "auctionId": "auc-2",
+        "user": "NN25CSE154 K ANURADHA PAI",
+        "userId": "99c15fd0-ad89-497d-941c-244f504a8712",
+        "message": "niceee",
+        "timestamp": 1792782258074,
+        "time": "Just now"
+      }
+    ],
+    "auc-3": [
+      {
+        "id": "c-auc-3-1",
+        "auctionId": "auc-3",
+        "user": "ArchivalCurator",
+        "userId": "curator-1",
+        "message": "Condition report and studio cataloguing verified.",
+        "timestamp": 1792779951710,
+        "time": "15m ago"
+      }
+    ],
+    "auc-4": [
+      {
+        "id": "c-auc-4-1",
+        "auctionId": "auc-4",
+        "user": "ArchivalCurator",
+        "userId": "curator-1",
+        "message": "Condition report and studio cataloguing verified.",
+        "timestamp": 1792779951710,
+        "time": "15m ago"
+      }
+    ],
+    "test-auc-1792781367549": [],
+    "test-auc-1792781411297": [],
+    "test-auc-1792781463638": [],
+    "test-auc-1792781494350": [],
+    "test-auc-1792781522443": [
+      {
+        "id": "c-test-unique-1",
+        "auctionId": "test-auc-1792781522443",
+        "userId": "user-chat-1",
+        "user": "Collector 1",
+        "message": "Authentic joinery visible.",
+        "timestamp": 1792781522485
+      }
+    ],
+    "auc-lot-1792782918993": [],
+    "auc-lot-1792812450051": [],
+    "test-auc-1792825449844": [],
+    "test-auc-1792825600805": [
+      {
+        "id": "c-test-unique-1",
+        "auctionId": "test-auc-1792825600805",
+        "userId": "user-chat-1",
+        "user": "Collector 1",
+        "message": "Authentic joinery visible.",
+        "timestamp": 1792825600852
+      }
+    ],
+    "test-auc-1792825614096": [
+      {
+        "id": "c-test-unique-1",
+        "auctionId": "test-auc-1792825614096",
+        "userId": "user-chat-1",
+        "user": "Collector 1",
+        "message": "Authentic joinery visible.",
+        "timestamp": 1792825614144
+      }
+    ],
+    "test-auc-1792825779001": [
+      {
+        "id": "c-test-unique-1",
+        "auctionId": "test-auc-1792825779001",
+        "userId": "user-chat-1",
+        "user": "Collector 1",
+        "message": "Authentic joinery visible.",
+        "timestamp": 1792825779035
+      }
+    ],
+    "auc-lot-1792830480912": [],
+    "auc-lot-1792830492406": []
+  }
+}
