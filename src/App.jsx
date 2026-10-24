@@ -67,6 +67,7 @@ export const App = () => {
                           <Route path="/upcoming-lots" element={<UpcomingLots />} />
                           <Route path="/live/:id" element={<LiveAuctionRoom />} />
                           <Route path="/auction/:id" element={<LiveAuctionRoom />} />
+                          <Route path="/meet/:id" element={<LiveAuctionRoom autoOpenMeet={true} />} />
                           <Route path="/product/:id" element={<ProductDetails />} />
                           <Route path="/seller/:sellerId" element={<SellerShop />} />
                           <Route path="/schedule" element={<Schedule />} />

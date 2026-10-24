@@ -212,3 +212,174 @@ export const getDemoBaselineAuction = (auctionId) => {
   const item = INITIAL_LIVE_AUCTIONS.find((a) => a.id === auctionId);
   return item ? JSON.parse(JSON.stringify(item)) : null;
 };
+
+/**
+ * Authoritative Winner Calculation:
+ * - Must be an ended auction
+ * - Cancelled auctions have NO winner
+ * - Validates bids in bidHistory
+ * - Seller CANNOT be the winner
+ * - Highest bid amount wins; earlier timestamp breaks ties
+ */
+export const getAuthoritativeAuctionWinner = (auction) => {
+  if (!auction) return null;
+
+  // 1. Cancelled auctions have no winner
+  if (auction.status === 'cancelled' || auction.isCancelled) {
+    return null;
+  }
+
+  // 2. Auction must be ended (by status or elapsed time)
+  const now = Date.now();
+  const end = auction.endTimestamp || auction.endTime || 0;
+  const isEnded = auction.status === 'ended' || (end > 0 && now >= end);
+  if (!isEnded) {
+    return null;
+  }
+
+  // 3. Must have bids
+  const bids = auction.bidHistory;
+  if (!Array.isArray(bids) || bids.length === 0) {
+    return null;
+  }
+
+  // 4. Seller cannot win their own auction
+  const sellerId = auction.sellerId;
+  const sellerName = (auction.seller || auction.maker || '').toLowerCase().trim();
+
+  const validBids = bids.filter((b) => {
+    if (!b || typeof b.amount !== 'number' || b.amount <= 0) return false;
+    if (sellerId && b.bidderId && b.bidderId === sellerId) return false;
+    if (sellerName && b.bidder && b.bidder.toLowerCase().trim() === sellerName) return false;
+    return true;
+  });
+
+  if (validBids.length === 0) {
+    return null;
+  }
+
+  // 5. Highest bid wins; earlier timestamp breaks ties
+  const sorted = [...validBids].sort((a, b) => {
+    if (b.amount !== a.amount) {
+      return b.amount - a.amount;
+    }
+    const timeA = a.timestamp || 0;
+    const timeB = b.timestamp || 0;
+    return timeA - timeB;
+  });
+
+  const top = sorted[0];
+  return {
+    bidder: top.bidder,
+    bidderId: top.bidderId || null,
+    amount: top.amount,
+    timestamp: top.timestamp || null,
+    time: top.time || 'Hammer Winner'
+  };
+};
+
+/**
+ * Determine meeting access rights and button label for the authenticated user.
+ */
+export const getMeetingAccess = (auction, currentUser) => {
+  if (!auction) {
+    return { canAccessMeeting: false, buttonLabel: null, reason: 'No auction provided.' };
+  }
+
+  if (auction.status === 'cancelled' || auction.isCancelled) {
+    return { canAccessMeeting: false, buttonLabel: null, reason: 'Auction was cancelled.' };
+  }
+
+  const now = Date.now();
+  const end = auction.endTimestamp || auction.endTime || 0;
+  const isEnded = auction.status === 'ended' || (end > 0 && now >= end);
+
+  if (!isEnded) {
+    return { canAccessMeeting: false, buttonLabel: null, reason: 'Auction is currently active.' };
+  }
+
+  const winner = getAuthoritativeAuctionWinner(auction);
+  if (!winner) {
+    return { canAccessMeeting: false, buttonLabel: null, reason: 'Auction concluded with no winning bids.' };
+  }
+
+  if (!currentUser) {
+    return {
+      canAccessMeeting: false,
+      buttonLabel: null,
+      winner,
+      reason: 'Sign in to access post-auction consultation.'
+    };
+  }
+
+  const sellerName = (auction.seller || auction.maker || '').toLowerCase().trim();
+  const isSeller = Boolean(
+    (auction.sellerId && currentUser.id === auction.sellerId) ||
+    (sellerName && currentUser.name && currentUser.name.toLowerCase().trim() === sellerName) ||
+    (sellerName && currentUser.studio && currentUser.studio.toLowerCase().trim() === sellerName) ||
+    (currentUser.role === 'artisan' || currentUser.role === 'seller'
+      ? (currentUser.id === auction.sellerId || (currentUser.name && sellerName && sellerName.includes(currentUser.name.toLowerCase().trim())))
+      : false)
+  );
+
+  const winnerName = (winner.bidder || '').toLowerCase().trim();
+  const currentUserName = (currentUser.name || '').toLowerCase().trim();
+  const currentUserEmail = (currentUser.email || '').toLowerCase().trim();
+  const currentUserUsername = (currentUser.username || '').toLowerCase().trim();
+  const winnerTokens = winnerName.split(/[\s._-]+/).filter(Boolean);
+  const userTokens = currentUserName.split(/[\s._-]+/).filter(Boolean);
+  const tokenMatch = winnerTokens.some((t) => t.length > 2 && userTokens.includes(t));
+
+  const isWinningBuyer = Boolean(
+    !isSeller && (
+      (winner.bidderId && currentUser.id === winner.bidderId) ||
+      (winnerName && currentUserName && (
+        currentUserName === winnerName ||
+        winnerName.includes(currentUserName) ||
+        currentUserName.includes(winnerName) ||
+        tokenMatch
+      )) ||
+      (winnerName && currentUserUsername && (
+        currentUserUsername === winnerName ||
+        winnerName.includes(currentUserUsername)
+      )) ||
+      (winnerName && currentUserEmail && (
+        currentUserEmail.split('@')[0] === winnerName
+      )) ||
+      winnerName === 'you' ||
+      currentUser.role === 'admin'
+    )
+  );
+
+  if (isWinningBuyer) {
+    return {
+      canAccessMeeting: true,
+      userMeetingRole: 'buyer',
+      isWinningBuyer: true,
+      isSeller: false,
+      winner,
+      buttonLabel: 'Enter Meeting'
+    };
+  }
+
+  if (isSeller) {
+    return {
+      canAccessMeeting: true,
+      userMeetingRole: 'seller',
+      isWinningBuyer: false,
+      isSeller: true,
+      winner,
+      buttonLabel: 'Meet Winner'
+    };
+  }
+
+  return {
+    canAccessMeeting: false,
+    userMeetingRole: null,
+    isWinningBuyer: false,
+    isSeller: false,
+    winner,
+    buttonLabel: null,
+    reason: 'Meeting is restricted to the verified winning buyer and authenticated seller.'
+  };
+};

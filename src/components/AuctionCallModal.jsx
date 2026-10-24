@@ -6,7 +6,6 @@ import {
   MicOff,
   PhoneOff,
   PhoneCall,
-  PhoneIncoming,
   ShieldCheck,
   AlertTriangle,
   X,
@@ -14,9 +13,11 @@ import {
   Clock,
   Send,
   MessageSquare,
-  Loader2
+  Loader2,
+  UserCheck
 } from 'lucide-react';
 import { WebRTCSignaling, RTC_CONFIGURATION, stopMediaStream } from '../lib/webrtc';
+import { getMeetingAccess } from '../data/auctions';
 import { useToast } from '../context/ToastContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ const persistMessages = (auctionId, msgs) => {
   try {
     localStorage.setItem(meetMessagesKey(auctionId), JSON.stringify(msgs));
   } catch {
-    // storage quota — ignore
+    // ignore
   }
 };
 
@@ -53,34 +54,18 @@ const formatDuration = (s) =>
 export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const { addToast } = useToast();
 
-  // ── Role detection ──────────────────────────────────────────────────────────
-  const winnerName =
-    auction?.winner?.bidder || auction?.bidHistory?.[0]?.bidder || 'Winner';
-  const winnerId =
-    auction?.winner?.bidderId || auction?.bidHistory?.[0]?.bidderId;
-  const sellerName = auction?.seller || auction?.maker || 'Seller';
-  const sellerId = auction?.sellerId;
+  // ── Authoritative Role & Meeting Access Detection ───────────────────────────
+  const access = getMeetingAccess(auction, currentUser);
+  const isAuthorized = access.canAccessMeeting;
+  const userRole = access.userMeetingRole || 'buyer';
+  const isWinningBuyer = access.isWinningBuyer;
+  const isSeller = access.isSeller;
+  const winnerName = access.winner?.bidder || 'Winning Collector';
+  const sellerName = auction?.seller || auction?.maker || 'Artisan Workshop';
 
-  const isWinningBuyer =
-    currentUser &&
-    (currentUser.id === winnerId ||
-      currentUser.name?.toLowerCase() === winnerName.toLowerCase() ||
-      winnerName.includes(currentUser.name?.split(' ')[0]) ||
-      winnerName.includes('You'));
-
-  const isSeller =
-    currentUser &&
-    (currentUser.id === sellerId ||
-      currentUser.name?.toLowerCase() === sellerName.toLowerCase() ||
-      currentUser.role === 'artisan' ||
-      currentUser.role === 'seller' ||
-      currentUser.studio === sellerName);
-
-  const isAuthorized = isWinningBuyer || isSeller;
-  const userRole = isSeller ? 'seller' : 'buyer';
-
-  // ── React state (drives re-renders) ────────────────────────────────────────
-  const [callState, setCallState] = useState('IDLE');
+  // ── State ──────────────────────────────────────────────────────────────────
+  // States: 'INIT' | 'WAITING' | 'CONNECTING' | 'CONNECTED' | 'ENDED' | 'ERROR'
+  const [callState, setCallState] = useState('INIT');
   const [errorMessage, setErrorMessage] = useState('');
   const [micEnabled, setMicEnabled] = useState(true);
   const [cameraEnabled, setCameraEnabled] = useState(true);
@@ -89,15 +74,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const [meetInput, setMeetInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [chatError, setChatError] = useState('');
+  const [otherParticipantPresent, setOtherParticipantPresent] = useState(false);
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const remoteVideoRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // ── Stable refs — updated every render so async callbacks always see fresh values ──
-  // These are accessed inside the signaling message handler (which is created once
-  // and never recreated), so they must be refs, not closure captures.
-  const callStateRef = useRef('IDLE');
+  // ── Stable refs for WebRTC callbacks ────────────────────────────────────────
+  const callStateRef = useRef('INIT');
   const isSellerRef = useRef(isSeller);
   const isWinningBuyerRef = useRef(isWinningBuyer);
   const auctionIdRef = useRef(auction?.id);
@@ -106,7 +90,6 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const addToastRef = useRef(addToast);
   const userRoleRef = useRef(userRole);
 
-  // Hardware / WebRTC refs
   const localVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -114,11 +97,9 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const durationTimerRef = useRef(null);
   const iceCandidateQueueRef = useRef([]);
   const remoteDescSetRef = useRef(false);
-
-  // setMeetMessages as a ref so the signaling handler can call it without stale closure
   const setMeetMessagesRef = useRef(setMeetMessages);
 
-  // Keep all refs current every render
+  // Keep refs synchronized each render
   callStateRef.current = callState;
   isSellerRef.current = isSeller;
   isWinningBuyerRef.current = isWinningBuyer;
@@ -129,7 +110,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   userRoleRef.current = userRole;
   setMeetMessagesRef.current = setMeetMessages;
 
-  // ── Callback ref for local <video> — assigns srcObject the moment it mounts ─
+  // ── Local video element ref callback ────────────────────────────────────────
   const localVideoCallbackRef = (el) => {
     localVideoRef.current = el;
     if (el && localStreamRef.current) {
@@ -137,8 +118,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
   };
 
-  // ── Add a chat message (usable from both sync UI and async signaling handler) ─
-  // Defined as a plain function using refs so it never goes stale.
+  // ── Add chat message helper ─────────────────────────────────────────────────
   const addMessageToState = (msg) => {
     setMeetMessagesRef.current((prev) => {
       const next = [...prev, msg];
@@ -147,7 +127,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     });
   };
 
-  // ── Drain the ICE candidate queue after setRemoteDescription ────────────────
+  // ── Drain queued ICE candidates ─────────────────────────────────────────────
   const drainIceCandidateQueue = async () => {
     const pc = peerConnectionRef.current;
     if (!pc) return;
@@ -161,8 +141,12 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
   };
 
-  // ── Obtain local media stream ───────────────────────────────────────────────
+  // ── Obtain local media (Video + Audio) ──────────────────────────────────────
   const obtainLocalMedia = async () => {
+    if (localStreamRef.current) {
+      return localStreamRef.current;
+    }
+
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Your browser does not support media device capture.');
@@ -175,14 +159,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           audio: true
         });
       } catch (videoErr) {
-        // Graceful audio-only fallback when camera is missing or busy
+        // Fallback to audio only if camera is unavailable
         if (
           videoErr.name === 'NotFoundError' ||
           videoErr.name === 'DevicesNotFoundError' ||
           videoErr.name === 'NotReadableError'
         ) {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          addToastRef.current('Camera unavailable — joining with audio only.');
+          addToastRef.current('Camera unavailable — connected with audio only.');
         } else {
           throw videoErr;
         }
@@ -195,23 +179,21 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       return stream;
     } catch (err) {
       console.error('Media capture error:', err);
-      let msg = 'Camera & Microphone access is required for live consultation.';
+      let msg = 'Camera and microphone access is required for the consultation.';
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Permission denied. Please grant camera and microphone access in your browser settings.';
+        msg = 'Permission denied. Please allow camera and microphone access in your browser.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         msg = 'No camera or microphone found on this device.';
       } else if (err.name === 'NotReadableError') {
         msg = 'Hardware is currently occupied by another application.';
       }
       setErrorMessage(msg);
-      setCallState('IDLE');
-      // Show error state after a tick so state transition is clean
-      setTimeout(() => setCallState('ERROR'), 0);
+      setCallState('ERROR');
       return null;
     }
   };
 
-  // ── Create and configure RTCPeerConnection ──────────────────────────────────
+  // ── Setup RTCPeerConnection ─────────────────────────────────────────────────
   const setupPeerConnection = (stream) => {
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
@@ -222,13 +204,16 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
     peerConnectionRef.current = pc;
 
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    if (stream) {
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    }
 
     pc.ontrack = (event) => {
       if (remoteVideoRef.current && event.streams[0]) {
         remoteVideoRef.current.srcObject = event.streams[0];
       }
       setCallState('CONNECTED');
+      setOtherParticipantPresent(true);
     };
 
     pc.onicecandidate = (event) => {
@@ -241,84 +226,124 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       const state = pc.connectionState;
       if (state === 'connected') {
         setCallState('CONNECTED');
-      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        setCallState((prev) =>
-          prev === 'CONNECTED' || prev === 'CONNECTING' ? 'ENDED' : prev
-        );
+        setOtherParticipantPresent(true);
+      } else if (state === 'disconnected' || state === 'failed') {
+        // Return to waiting room if connection drops
+        setCallState('WAITING');
+        setOtherParticipantPresent(false);
+      } else if (state === 'closed') {
+        if (callStateRef.current === 'CONNECTED') {
+          setCallState('WAITING');
+        }
       }
     };
 
     return pc;
   };
 
-  // ── Signaling channel — created ONCE, never recreated ──────────────────────
+  // ── Initiate WebRTC call (Buyer side creates offer) ─────────────────────────
+  const initiateCallOffer = async () => {
+    try {
+      const stream = localStreamRef.current || (await obtainLocalMedia());
+      if (!stream) return;
+
+      setCallState('CONNECTING');
+      const pc = setupPeerConnection(stream);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      signalingRef.current?.send('SDP_OFFER', offer);
+    } catch (err) {
+      console.error('Error creating offer:', err);
+      setErrorMessage('Failed to establish peer connection.');
+      setCallState('ERROR');
+    }
+  };
+
+  // ── Main WebRTC Room Lifecycle ──────────────────────────────────────────────
   useEffect(() => {
     if (!auction?.id || !currentUser?.id || !isAuthorized) return;
 
+    let isMounted = true;
+
+    // 1. Enter room: acquire media and show waiting room
+    const initializeRoom = async () => {
+      const stream = await obtainLocalMedia();
+      if (!isMounted) return;
+
+      if (stream) {
+        setCallState('WAITING');
+        // Announce entry into the meeting room
+        signalingRef.current?.send('ROOM_JOINED', {
+          userId: currentUser.id,
+          role: userRole,
+          name: currentUser.name
+        });
+      }
+    };
+
+    // 2. Initialize signaling channel
     const signaling = new WebRTCSignaling(auction.id, currentUser.id, userRole);
     signalingRef.current = signaling;
 
     const unsubscribe = signaling.onMessage(async (message) => {
-      const { type, data } = message;
-      // All mutable state is read via refs — no stale closure risk
-      const _isSeller = isSellerRef.current;
-      const _isWinningBuyer = isWinningBuyerRef.current;
-      const _callState = callStateRef.current;
+      if (!isMounted) return;
+      const { type, data, role: senderRole } = message;
+
+      const _userRole = userRoleRef.current;
       const _currentUser = currentUserRef.current;
 
       switch (type) {
-        case 'CALL_INITIATED':
-          if (_isSeller && _callState === 'IDLE') {
-            setCallState('RINGING_INCOMING');
+        case 'ROOM_JOINED':
+          // The other participant has joined or rejoined the room!
+          setOtherParticipantPresent(true);
+          // Acknowledge our presence in the room
+          signaling.send('ROOM_PRESENCE_ACK', {
+            userId: _currentUser.id,
+            role: _userRole,
+            name: _currentUser.name
+          });
+
+          // Deterministic initiator: Buyer creates the SDP offer
+          if (_userRole === 'buyer') {
+            await initiateCallOffer();
           }
           break;
 
-        case 'CALL_ACCEPTED':
-          if (_isWinningBuyer && _callState === 'RINGING_OUTGOING') {
-            setCallState('CONNECTING');
-            const stream = localStreamRef.current || (await obtainLocalMedia());
-            if (!stream) return;
-            try {
-              const pc = setupPeerConnection(stream);
-              const offer = await pc.createOffer();
-              await pc.setLocalDescription(offer);
-              signaling.send('SDP_OFFER', offer);
-            } catch (err) {
-              console.error('Error creating offer:', err);
-              setErrorMessage('Failed to establish peer connection.');
-              setCallState('ERROR');
-            }
+        case 'ROOM_PRESENCE_ACK':
+          // The other participant was already present in the room!
+          setOtherParticipantPresent(true);
+          if (_userRole === 'buyer') {
+            await initiateCallOffer();
           }
-          break;
-
-        case 'CALL_DECLINED':
-          setCallState('ENDED');
-          setErrorMessage('The seller is unable to take the call at this moment.');
-          addToastRef.current('Call declined by seller.');
           break;
 
         case 'SDP_OFFER':
-          if (_isSeller) {
+          // Seller receives offer from buyer and responds with answer
+          if (_userRole === 'seller') {
             try {
+              setCallState('CONNECTING');
               const stream = localStreamRef.current || (await obtainLocalMedia());
               if (!stream) return;
+
               const pc = setupPeerConnection(stream);
               await pc.setRemoteDescription(new RTCSessionDescription(data));
               remoteDescSetRef.current = true;
               await drainIceCandidateQueue();
+
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
               signaling.send('SDP_ANSWER', answer);
             } catch (err) {
-              console.error('Error handling offer:', err);
-              setErrorMessage('Failed to connect with buyer.');
+              console.error('Error handling SDP offer:', err);
+              setErrorMessage('Failed to connect video stream with buyer.');
               setCallState('ERROR');
             }
           }
           break;
 
         case 'SDP_ANSWER':
-          if (_isWinningBuyer && peerConnectionRef.current) {
+          // Buyer receives answer from seller
+          if (_userRole === 'buyer' && peerConnectionRef.current) {
             try {
               await peerConnectionRef.current.setRemoteDescription(
                 new RTCSessionDescription(data)
@@ -348,15 +373,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           break;
 
         case 'CALL_ENDED':
-          stopMediaStream(localStreamRef.current);
-          localStreamRef.current = null;
+          // Other participant left or hung up
+          setOtherParticipantPresent(false);
           if (peerConnectionRef.current) {
             peerConnectionRef.current.close();
             peerConnectionRef.current = null;
           }
-          setCallState('ENDED');
-          addToastRef.current('Live consultation ended by the other participant.');
-          setTimeout(() => onCloseRef.current(), 1500);
+          setCallState('WAITING');
+          addToastRef.current('The other participant left the consultation room.');
           break;
 
         case 'CHAT_MESSAGE':
@@ -370,8 +394,10 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       }
     });
 
-    // Dedicated BroadcastChannel for same-browser cross-tab chat sync.
-    // We use a stable handler that delegates to addMessageToState (ref-based).
+    // Start local media acquisition and announce entry
+    initializeRoom();
+
+    // Cross-tab broadcast listener for chat
     let chatBc;
     if (typeof BroadcastChannel !== 'undefined') {
       chatBc = new BroadcastChannel(`veyra_meet_chat_${auction.id}`);
@@ -384,16 +410,20 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
 
     return () => {
+      isMounted = false;
+      signaling.send('CALL_ENDED', { reason: 'participant_left' });
       unsubscribe();
       signaling.destroy();
       signalingRef.current = null;
       if (chatBc) chatBc.close();
+      stopMediaStream(localStreamRef.current);
+      localStreamRef.current = null;
+      peerConnectionRef.current?.close();
+      peerConnectionRef.current = null;
     };
-    // Effect runs once per auction/user — callState is intentionally excluded.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auction?.id, currentUser?.id, isAuthorized, userRole]);
 
-  // ── Duration timer ──────────────────────────────────────────────────────────
+  // ── Call duration timer ─────────────────────────────────────────────────────
   useEffect(() => {
     if (callState === 'CONNECTED') {
       durationTimerRef.current = setInterval(
@@ -411,55 +441,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [meetMessages]);
 
-  // ── Full cleanup on unmount ─────────────────────────────────────────────────
-  useEffect(() => {
-    return () => {
-      stopMediaStream(localStreamRef.current);
-      peerConnectionRef.current?.close();
-      clearInterval(durationTimerRef.current);
-    };
-  }, []);
-
-  // ── Call actions ────────────────────────────────────────────────────────────
-
-  const handleStartCall = async () => {
-    setErrorMessage('');
-    const stream = await obtainLocalMedia();
-    if (!stream) return;
-    setCallState('RINGING_OUTGOING');
-    signalingRef.current?.send('CALL_INITIATED', {
-      callerName: currentUser.name,
-      callerId: currentUser.id
-    });
-  };
-
-  const handleAcceptCall = async () => {
-    setErrorMessage('');
-    const stream = await obtainLocalMedia();
-    if (!stream) return;
-    setCallState('CONNECTING');
-    signalingRef.current?.send('CALL_ACCEPTED', {
-      receiverName: currentUser.name
-    });
-  };
-
-  const handleDeclineCall = () => {
-    signalingRef.current?.send('CALL_DECLINED', {});
-    setCallState('ENDED');
-    onClose();
-  };
-
-  const handleHangUp = (notifyRemote = true) => {
-    if (notifyRemote) signalingRef.current?.send('CALL_ENDED', {});
-    stopMediaStream(localStreamRef.current);
-    localStreamRef.current = null;
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
-    setCallState('ENDED');
-    addToast('Live consultation ended.');
-    setTimeout(onClose, 1200);
-  };
-
+  // ── Controls: Mic & Camera ──────────────────────────────────────────────────
   const toggleMic = () => {
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (track) {
@@ -476,7 +458,18 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
   };
 
-  // ── Chat send ───────────────────────────────────────────────────────────────
+  const handleHangUp = () => {
+    signalingRef.current?.send('CALL_ENDED', {});
+    stopMediaStream(localStreamRef.current);
+    localStreamRef.current = null;
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    setCallState('ENDED');
+    addToast('You left the consultation room.');
+    setTimeout(onClose, 800);
+  };
+
+  // ── Send Chat Message ───────────────────────────────────────────────────────
   const handleSendMessage = async (e) => {
     e.preventDefault();
     const text = meetInput.trim();
@@ -503,7 +496,6 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
       setMeetInput('');
       signalingRef.current?.send('CHAT_MESSAGE', msg);
 
-      // Dedicated chat BroadcastChannel for same-browser cross-tab delivery
       if (typeof BroadcastChannel !== 'undefined') {
         try {
           const bc = new BroadcastChannel(`veyra_meet_chat_${auction.id}`);
@@ -521,7 +513,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
   };
 
-  // ── Unauthorized guard ──────────────────────────────────────────────────────
+  // ── Unauthorized Guard ──────────────────────────────────────────────────────
   if (!isAuthorized) {
     return (
       <div
@@ -573,14 +565,14 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     );
   }
 
-  // ── Main modal ──────────────────────────────────────────────────────────────
+  // ── Main WebRTC Meeting Room Modal ──────────────────────────────────────────
   return (
     <div
       role="dialog"
       aria-modal="true"
       style={{
         position: 'fixed', inset: 0, zIndex: 1100,
-        backgroundColor: 'rgba(15, 15, 15, 0.9)', backdropFilter: 'blur(8px)',
+        backgroundColor: 'rgba(15, 15, 15, 0.92)', backdropFilter: 'blur(8px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px'
       }}
@@ -608,7 +600,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             <span
               style={{
                 width: '8px', height: '8px', borderRadius: '50%',
-                backgroundColor: callState === 'CONNECTED' ? '#22c55e' : 'var(--accent-burgundy)'
+                backgroundColor: callState === 'CONNECTED' ? '#22c55e' : '#f59e0b'
               }}
             />
             <div>
@@ -618,11 +610,11 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
                   textTransform: 'uppercase', color: '#999', display: 'block'
                 }}
               >
-                Post-Auction Private Consultation — {auction.name}
+                Post-Auction Private Consultation — Lot #{auction.id.toUpperCase()}
               </span>
               <strong style={{ fontSize: 'var(--text-sm)', color: '#FFF' }}>
                 {isWinningBuyer
-                  ? `Meeting with Maker: ${sellerName}`
+                  ? `Consultation with Maker: ${sellerName}`
                   : `Consultation with Winning Collector: ${winnerName}`}
               </strong>
             </div>
@@ -643,26 +635,27 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
               </div>
             )}
             <button
-              onClick={() => handleHangUp(true)}
+              onClick={handleHangUp}
               style={{ background: 'transparent', border: 'none', color: '#AAA', cursor: 'pointer', padding: '4px' }}
-              title="Close window"
+              title="Leave meeting"
             >
               <X size={20} />
             </button>
           </div>
         </div>
 
-        {/* ── Body: Video + Chat ── */}
+        {/* ── Body: Video Area + Chat ── */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
-          {/* ── Video area ── */}
+          {/* ── Video Area ── */}
           <div
             style={{
               flex: 1, position: 'relative',
-              backgroundColor: '#0F0F0F', minWidth: 0, minHeight: '340px'
+              backgroundColor: '#0F0F0F', minWidth: 0, minHeight: '380px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
             }}
           >
-            {/* Remote video (full size) */}
+            {/* Remote video (full size when CONNECTED) */}
             <video
               ref={remoteVideoRef}
               autoPlay
@@ -673,238 +666,182 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
               }}
             />
 
-            {/* Local video — picture-in-picture thumbnail */}
-            <div
-              style={{
-                position: 'absolute', bottom: '16px', right: '16px',
-                width: '160px', aspectRatio: '16 / 9',
-                backgroundColor: '#262626', borderRadius: 'var(--radius-xs)',
-                overflow: 'hidden', border: '1.5px solid #444',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)', zIndex: 10,
-                display:
-                  callState === 'CONNECTED' ||
-                  callState === 'RINGING_OUTGOING' ||
-                  callState === 'CONNECTING'
-                    ? 'block'
-                    : 'none'
-              }}
-            >
-              <video
-                ref={localVideoCallbackRef}
-                autoPlay
-                muted
-                playsInline
+            {/* Local video preview: Center during WAITING / INIT; PiP corner when CONNECTED */}
+            {callState === 'CONNECTED' ? (
+              /* PiP corner thumbnail when connected */
+              <div
                 style={{
-                  width: '100%', height: '100%', objectFit: 'cover',
-                  transform: 'scaleX(-1)'
-                }}
-              />
-              <span
-                style={{
-                  position: 'absolute', bottom: '4px', left: '6px',
-                  fontSize: '9px', backgroundColor: 'rgba(0,0,0,0.7)',
-                  padding: '1px 4px', borderRadius: '2px', color: '#EEE'
+                  position: 'absolute', bottom: '16px', right: '16px',
+                  width: '180px', aspectRatio: '16 / 9',
+                  backgroundColor: '#262626', borderRadius: 'var(--radius-xs)',
+                  overflow: 'hidden', border: '1.5px solid #444',
+                  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)', zIndex: 10
                 }}
               >
-                You ({userRole})
-              </span>
-            </div>
+                <video
+                  ref={localVideoCallbackRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  style={{
+                    width: '100%', height: '100%', objectFit: 'cover',
+                    transform: 'scaleX(-1)'
+                  }}
+                />
+                <span
+                  style={{
+                    position: 'absolute', bottom: '4px', left: '6px',
+                    fontSize: '9px', backgroundColor: 'rgba(0,0,0,0.7)',
+                    padding: '1px 4px', borderRadius: '2px', color: '#EEE'
+                  }}
+                >
+                  You ({userRole}) {!cameraEnabled && '(Camera Off)'}
+                </span>
+              </div>
+            ) : (
+              /* Full preview background when WAITING or CONNECTING */
+              <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+                <video
+                  ref={localVideoCallbackRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  style={{
+                    width: '100%', height: '100%', objectFit: 'cover',
+                    transform: 'scaleX(-1)', opacity: cameraEnabled ? 0.35 : 0.05
+                  }}
+                />
+              </div>
+            )}
 
-            {/* ── Overlay for pre-connected states ── */}
+            {/* ── Waiting Room Overlay (when not yet connected) ── */}
             {callState !== 'CONNECTED' && (
               <div
                 style={{
-                  position: 'absolute', inset: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  padding: '24px'
+                  position: 'relative', zIndex: 5,
+                  padding: '32px', textAlign: 'center', maxWidth: '480px'
                 }}
               >
-                <div style={{ textAlign: 'center', maxWidth: '420px' }}>
-
-                  {callState === 'IDLE' && isWinningBuyer && (
-                    <div>
-                      <div
-                        style={{
-                          width: '64px', height: '64px', borderRadius: '50%',
-                          backgroundColor: 'rgba(120, 59, 75, 0.2)', color: 'var(--accent-burgundy)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          margin: '0 auto 18px', border: '1px solid var(--accent-burgundy)'
-                        }}
-                      >
-                        <PhoneCall size={28} />
-                      </div>
-                      <h3 style={{ fontSize: '1.5rem', marginBottom: '8px', color: '#FFF' }}>
-                        Connect with {sellerName}
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA', lineHeight: 1.6, marginBottom: '24px' }}>
-                        Congratulations on your winning bid. You are invited to a live
-                        WebRTC audio/video call to discuss provenance, packaging, or
-                        custom delivery.
-                      </p>
-                      <button
-                        onClick={handleStartCall}
-                        className="btn btn-burgundy"
-                        style={{
-                          height: '44px', padding: '0 28px', fontSize: '13px',
-                          letterSpacing: '0.04em', display: 'inline-flex',
-                          alignItems: 'center', gap: '8px'
-                        }}
-                      >
-                        <Video size={16} />
-                        <span>Initiate Live Video Call</span>
-                      </button>
+                {callState === 'WAITING' && (
+                  <div>
+                    <div
+                      style={{
+                        width: '64px', height: '64px', borderRadius: '50%',
+                        backgroundColor: 'rgba(120, 59, 75, 0.25)',
+                        border: '1.5px solid var(--accent-burgundy)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        margin: '0 auto 16px'
+                      }}
+                    >
+                      <Clock size={28} color="var(--accent-burgundy)" />
                     </div>
-                  )}
 
-                  {callState === 'IDLE' && isSeller && (
-                    <div>
-                      <div
-                        style={{
-                          width: '64px', height: '64px', borderRadius: '50%',
-                          backgroundColor: 'rgba(255, 255, 255, 0.08)', color: '#FFF',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          margin: '0 auto 18px'
-                        }}
-                      >
-                        <PhoneIncoming size={28} />
-                      </div>
-                      <h3 style={{ fontSize: '1.5rem', marginBottom: '8px', color: '#FFF' }}>
-                        Awaiting Call from Winner
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA', lineHeight: 1.6 }}>
-                        This lot was won by <strong>{winnerName}</strong>. You will
-                        receive an instant notification when the collector initiates
-                        the private consultation. You can also use the chat panel while
-                        waiting.
-                      </p>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 12px', backgroundColor: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: '20px', marginBottom: '12px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b', animation: 'pulseLive 1.5s infinite ease-in-out' }} />
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#f59e0b' }}>
+                        Waiting for the other participant…
+                      </span>
                     </div>
-                  )}
 
-                  {callState === 'RINGING_OUTGOING' && (
-                    <div>
-                      <div
-                        style={{
-                          width: '64px', height: '64px', borderRadius: '50%',
-                          backgroundColor: 'rgba(120, 59, 75, 0.3)', color: '#FFF',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          margin: '0 auto 18px',
-                          animation: 'pulseLive 1.5s infinite ease-in-out'
-                        }}
-                      >
-                        <PhoneCall size={28} />
-                      </div>
-                      <h3 style={{ fontSize: '1.4rem', marginBottom: '8px', color: '#FFF' }}>
-                        Calling {sellerName}…
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA' }}>
-                        Signaling atelier channel. Waiting for the maker to accept.
-                      </p>
+                    <h3 style={{ fontSize: '1.45rem', marginBottom: '8px', color: '#FFF' }}>
+                      Meeting Waiting Room
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#AAA', lineHeight: 1.6, marginBottom: '20px' }}>
+                      {isWinningBuyer ? (
+                        <>
+                          You are in the consultation room. Waiting for maker <strong>{sellerName}</strong> to enter. Your camera & microphone preview are active below.
+                        </>
+                      ) : (
+                        <>
+                          You are in the consultation room. Waiting for winning collector <strong>{winnerName}</strong> to enter. Your camera & microphone preview are active below.
+                        </>
+                      )}
+                    </p>
+
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: '#888', backgroundColor: '#1c1c1c', padding: '6px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid #333' }}>
+                      <ShieldCheck size={14} color="#22c55e" />
+                      <span>Camera & Audio Ready • You can send a message in chat while waiting</span>
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {callState === 'RINGING_INCOMING' && (
-                    <div>
-                      <div
-                        style={{
-                          width: '64px', height: '64px', borderRadius: '50%',
-                          backgroundColor: 'var(--accent-burgundy)', color: '#FFF',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          margin: '0 auto 18px',
-                          animation: 'pulseLive 1.2s infinite ease-in-out'
-                        }}
-                      >
-                        <PhoneIncoming size={28} />
-                      </div>
-                      <h3 style={{ fontSize: '1.5rem', marginBottom: '6px', color: '#FFF' }}>
-                        Incoming Call from {winnerName}
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA', marginBottom: '24px' }}>
-                        The winning collector is requesting a live video consultation.
-                      </p>
-                      <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
-                        <button
-                          onClick={handleAcceptCall}
-                          className="btn"
-                          style={{
-                            backgroundColor: '#22c55e', color: '#FFF',
-                            height: '42px', padding: '0 24px',
-                            display: 'inline-flex', alignItems: 'center', gap: '8px'
-                          }}
-                        >
-                          <Video size={16} /><span>Accept Video Call</span>
-                        </button>
-                        <button
-                          onClick={handleDeclineCall}
-                          className="btn"
-                          style={{
-                            backgroundColor: '#333333', color: '#FFF',
-                            height: '42px', padding: '0 20px',
-                            display: 'inline-flex', alignItems: 'center', gap: '8px'
-                          }}
-                        >
-                          <PhoneOff size={16} /><span>Decline</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                {callState === 'CONNECTING' && (
+                  <div>
+                    <div
+                      style={{
+                        width: '54px', height: '54px', borderRadius: '50%',
+                        border: '3px solid #333', borderTopColor: 'var(--accent-burgundy)',
+                        animation: 'spin 1s infinite linear', margin: '0 auto 16px'
+                      }}
+                    />
+                    <h3 style={{ fontSize: '1.4rem', marginBottom: '6px', color: '#FFF' }}>
+                      Connecting Media Streams…
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#AAA' }}>
+                      Both participants are in the room. Establishing encrypted peer-to-peer WebRTC connection.
+                    </p>
+                  </div>
+                )}
 
-                  {callState === 'CONNECTING' && (
-                    <div>
-                      <div
-                        style={{
-                          width: '48px', height: '48px', borderRadius: '50%',
-                          border: '3px solid #444', borderTopColor: 'var(--accent-burgundy)',
-                          animation: 'spin 1s infinite linear', margin: '0 auto 18px'
-                        }}
-                      />
-                      <h3 style={{ fontSize: '1.3rem', marginBottom: '6px', color: '#FFF' }}>
-                        Connecting Media Streams…
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA' }}>
-                        Exchanging ICE candidates and establishing encrypted P2P connection.
-                      </p>
-                    </div>
-                  )}
+                {callState === 'INIT' && (
+                  <div>
+                    <div
+                      style={{
+                        width: '48px', height: '48px', borderRadius: '50%',
+                        border: '3px solid #333', borderTopColor: '#f59e0b',
+                        animation: 'spin 1s infinite linear', margin: '0 auto 16px'
+                      }}
+                    />
+                    <h3 style={{ fontSize: '1.3rem', marginBottom: '6px', color: '#FFF' }}>
+                      Initializing Meeting Room…
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#AAA' }}>
+                      Accessing audio and video capture devices.
+                    </p>
+                  </div>
+                )}
 
-                  {callState === 'ENDED' && (
-                    <div>
-                      <h3 style={{ fontSize: '1.4rem', marginBottom: '6px', color: '#FFF' }}>
-                        Consultation Concluded
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA' }}>
-                        Thank you. Details have been documented in your collector acquisitions archive.
-                      </p>
-                    </div>
-                  )}
+                {callState === 'ENDED' && (
+                  <div>
+                    <h3 style={{ fontSize: '1.4rem', marginBottom: '6px', color: '#FFF' }}>
+                      Consultation Concluded
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#AAA' }}>
+                      Thank you. This consultation has been successfully documented.
+                    </p>
+                  </div>
+                )}
 
-                  {callState === 'ERROR' && (
-                    <div>
-                      <AlertTriangle size={32} color="#ef4444" style={{ marginBottom: '12px' }} />
-                      <h3 style={{ fontSize: '1.3rem', marginBottom: '6px', color: '#FFF' }}>
-                        Media Device Notice
-                      </h3>
-                      <p style={{ fontSize: '13px', color: '#AAA', marginBottom: '20px' }}>
-                        {errorMessage || 'Unable to access audio or video capture hardware.'}
-                      </p>
-                      <button
-                        onClick={() => { setCallState('IDLE'); setErrorMessage(''); }}
-                        className="btn btn-secondary"
-                        style={{ height: '36px', fontSize: '12px' }}
-                      >
-                        Try Again
-                      </button>
-                    </div>
-                  )}
-
-                </div>
+                {callState === 'ERROR' && (
+                  <div>
+                    <AlertTriangle size={36} color="#ef4444" style={{ margin: '0 auto 12px' }} />
+                    <h3 style={{ fontSize: '1.3rem', marginBottom: '6px', color: '#FFF' }}>
+                      Media Device Notice
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#AAA', marginBottom: '20px' }}>
+                      {errorMessage || 'Unable to access audio or video capture hardware.'}
+                    </p>
+                    <button
+                      onClick={async () => {
+                        setErrorMessage('');
+                        const stream = await obtainLocalMedia();
+                        if (stream) setCallState('WAITING');
+                      }}
+                      className="btn btn-secondary"
+                      style={{ height: '36px', fontSize: '12px' }}
+                    >
+                      Retry Camera / Audio
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* ── Chat panel ── */}
+          {/* ── Chat Panel ── */}
           <div
             style={{
-              width: '300px', flexShrink: 0,
+              width: '320px', flexShrink: 0,
               borderLeft: '1px solid #2a2a2a',
               display: 'flex', flexDirection: 'column',
               backgroundColor: '#141414'
@@ -919,11 +856,11 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             >
               <MessageSquare size={15} color="var(--accent-burgundy)" />
               <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFF' }}>
-                Private Messages
+                Private Consultation Notes
               </span>
               <span
                 style={{
-                  marginLeft: 'auto', fontSize: '10px', color: '#666',
+                  marginLeft: 'auto', fontSize: '10px', color: '#888',
                   backgroundColor: '#262626', padding: '2px 7px',
                   borderRadius: '4px', textTransform: 'capitalize'
                 }}
@@ -940,10 +877,10 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
               }}
             >
               {meetMessages.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 16px', color: '#555' }}>
+                <div style={{ textAlign: 'center', padding: '36px 16px', color: '#666' }}>
                   <MessageSquare size={24} style={{ marginBottom: '8px', opacity: 0.35 }} />
                   <p style={{ fontSize: '12px', lineHeight: 1.5 }}>
-                    No messages yet.<br />Start the conversation.
+                    No messages yet.<br />Leave a note or discuss delivery details in real time.
                   </p>
                 </div>
               ) : (
@@ -993,7 +930,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
 
                       <div
                         style={{
-                          maxWidth: '220px', padding: '8px 10px',
+                          maxWidth: '240px', padding: '8px 10px',
                           borderRadius: isOwn ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                           backgroundColor: isOwn ? 'var(--accent-burgundy)' : '#262626',
                           fontSize: '12.5px', lineHeight: 1.5, color: '#FFF',
@@ -1047,7 +984,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
                       handleSendMessage(e);
                     }
                   }}
-                  placeholder="Message… (Enter to send)"
+                  placeholder="Message floor… (Enter to send)"
                   maxLength={MAX_MESSAGE_LENGTH}
                   rows={2}
                   disabled={isSendingMessage}
@@ -1092,7 +1029,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           </div>
         </div>
 
-        {/* ── Controls footer ── */}
+        {/* ── Controls Footer ── */}
         <div
           style={{
             padding: '14px 20px', borderTop: '1px solid #2a2a2a',
@@ -1104,41 +1041,39 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: '#AAA' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <Volume2 size={14} />
-              <span>P2P Encrypted Audio</span>
+              <span>WebRTC Encrypted Stream</span>
             </span>
             <span style={{ opacity: 0.3 }}>|</span>
-            <span>WebRTC Active</span>
+            <span>Room #{auction.id.toUpperCase()}</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Mic toggle: active in both WAITING and CONNECTED */}
             <button
               onClick={toggleMic}
-              disabled={callState !== 'CONNECTED'}
               style={{
                 width: '40px', height: '40px', borderRadius: '50%',
                 backgroundColor: micEnabled ? '#333333' : '#ef4444',
                 color: '#FFF', border: 'none',
-                cursor: callState === 'CONNECTED' ? 'pointer' : 'default',
+                cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background-color 150ms ease',
-                opacity: callState !== 'CONNECTED' ? 0.45 : 1
+                transition: 'background-color 150ms ease'
               }}
               title={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
               {micEnabled ? <Mic size={17} /> : <MicOff size={17} />}
             </button>
 
+            {/* Camera toggle: active in both WAITING and CONNECTED */}
             <button
               onClick={toggleCamera}
-              disabled={callState !== 'CONNECTED'}
               style={{
                 width: '40px', height: '40px', borderRadius: '50%',
                 backgroundColor: cameraEnabled ? '#333333' : '#ef4444',
                 color: '#FFF', border: 'none',
-                cursor: callState === 'CONNECTED' ? 'pointer' : 'default',
+                cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background-color 150ms ease',
-                opacity: callState !== 'CONNECTED' ? 0.45 : 1
+                transition: 'background-color 150ms ease'
               }}
               title={cameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
@@ -1146,7 +1081,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             </button>
 
             <button
-              onClick={() => handleHangUp(true)}
+              onClick={handleHangUp}
               style={{
                 height: '40px', padding: '0 18px', borderRadius: '20px',
                 backgroundColor: '#ef4444', color: '#FFF',
@@ -1155,18 +1090,18 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
               }}
             >
               <PhoneOff size={15} />
-              <span>End Consultation</span>
+              <span>Leave Room</span>
             </button>
           </div>
 
           <button
-            onClick={() => handleHangUp(true)}
+            onClick={handleHangUp}
             style={{
-              color: '#666', fontSize: '11px', textDecoration: 'underline',
+              color: '#888', fontSize: '11px', textDecoration: 'underline',
               cursor: 'pointer', background: 'none', border: 'none'
             }}
           >
-            Leave consultation room
+            Exit Consultation
           </button>
         </div>
       </div>

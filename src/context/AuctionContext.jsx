@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { INITIAL_LIVE_AUCTIONS, UPCOMING_AUCTIONS, DEMO_AUCTION_IDS, getDemoBaselineAuction } from '../data/auctions';
+import { INITIAL_LIVE_AUCTIONS, UPCOMING_AUCTIONS, DEMO_AUCTION_IDS, getDemoBaselineAuction, getAuthoritativeAuctionWinner, getMeetingAccess } from '../data/auctions';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -728,17 +728,7 @@ export const AuctionProvider = ({ children }) => {
           return auction;
         }
 
-        // 2. Minimum amount validation
-        const minAcceptable = auction.currentBid + auction.minIncrement;
-        if (Number(amount) < minAcceptable) {
-          outcome = {
-            success: false,
-            error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.`
-          };
-          return auction;
-        }
-
-        // 3. Duplicate bid prevention & rapid double-click guard
+        // 2. Duplicate bid prevention & rapid double-click guard
         const topBid = auction.bidHistory && auction.bidHistory.length > 0 ? auction.bidHistory[0] : null;
         if (topBid) {
           if (Number(amount) === topBid.amount) {
@@ -764,6 +754,16 @@ export const AuctionProvider = ({ children }) => {
             };
             return auction;
           }
+        }
+
+        // 3. Minimum amount validation
+        const minAcceptable = auction.currentBid + auction.minIncrement;
+        if (Number(amount) < minAcceptable) {
+          outcome = {
+            success: false,
+            error: `Bid must be at least ₹${minAcceptable.toLocaleString('en-IN')}.`
+          };
+          return auction;
         }
 
         const newRecord = {
@@ -963,7 +963,9 @@ export const AuctionProvider = ({ children }) => {
         getLeaderboard,
         resetDemoAuction,
         resetAllDemoAuctions,
-        DEMO_AUCTION_IDS
+        DEMO_AUCTION_IDS,
+        getAuthoritativeAuctionWinner,
+        getMeetingAccess
       }}
     >
       {children}
