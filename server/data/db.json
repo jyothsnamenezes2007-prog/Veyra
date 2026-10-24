@@ -1003,7 +1003,7 @@
       "minIncrement": 2000,
       "bidCount": 11,
       "endsInSeconds": 15420,
-      "status": "active",
+      "status": "ended",
       "image": "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80",
       "images": [
         "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80",
@@ -1047,8 +1047,16 @@
       "scheduledTimestamp": 1792822232864,
       "endTimestamp": 1792837712864,
       "endTime": 1792837712864,
-      "remainingSeconds": 6811,
-      "winner": null
+      "remainingSeconds": 0,
+      "winner": {
+        "bidder": "Elena R.",
+        "bidderId": null,
+        "amount": 68500,
+        "timestamp": 1792821812859,
+        "time": "8 mins ago"
+      },
+      "winningBid": 68500,
+      "result": "sold"
     },
     {
       "id": "auc-3",
