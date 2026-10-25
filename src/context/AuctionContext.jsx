@@ -259,6 +259,12 @@ export const AuctionProvider = ({ children }) => {
                 const exists = prev.some((a) => a.id === auction.id);
                 return exists ? prev : [auction, ...prev];
               });
+            } else if (type === 'PROXY_BID_PLACED') {
+              const { bid, auctionId } = payload;
+              addToast(`🤖 Automatic Proxy Bid of ₹${Number(bid.amount).toLocaleString('en-IN')} placed for lot #${auctionId.toUpperCase()}.`);
+            } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
+              const { reason, auctionId } = payload;
+              addToast(`⚠️ Proxy Bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
             }
           } catch (err) {}
         };
@@ -1207,6 +1213,58 @@ export const AuctionProvider = ({ children }) => {
     }));
   };
 
+  // Automatic Proxy Bidding Helpers
+  const getProxyBidConfig = useCallback(async (auctionId, userId) => {
+    if (!auctionId || !userId) return { success: false, config: null };
+    try {
+      const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/proxy-bid?userId=${encodeURIComponent(userId)}`);
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }, []);
+
+  const enableProxyBid = useCallback(async (auctionId, { maxBid, preferredIncrement, userId, userName }) => {
+    try {
+      const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/proxy-bid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxBid, preferredIncrement, userId, userName })
+      });
+      const data = await res.json();
+      if (data.success) {
+        addToast(`Automatic Proxy Bidding activated. Maximum authorized: ₹${Number(maxBid).toLocaleString('en-IN')}.`);
+      } else {
+        addToast(data.error || 'Failed to enable automatic proxy bidding.', 'error');
+      }
+      return data;
+    } catch (err) {
+      addToast(err.message || 'Network error enabling proxy bidding.', 'error');
+      return { success: false, error: err.message };
+    }
+  }, [addToast]);
+
+  const disableProxyBid = useCallback(async (auctionId, userId) => {
+    try {
+      const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/proxy-bid/disable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        addToast('Automatic Proxy Bidding disabled for this lot.');
+      } else {
+        addToast(data.error || 'Failed to disable proxy bidding.', 'error');
+      }
+      return data;
+    } catch (err) {
+      addToast(err.message || 'Network error disabling proxy bidding.', 'error');
+      return { success: false, error: err.message };
+    }
+  }, [addToast]);
+
   return (
     <AuctionContext.Provider
       value={{
@@ -1218,6 +1276,9 @@ export const AuctionProvider = ({ children }) => {
         rescheduleAuctionLot,
         rejectAuctionLot,
         placeBid,
+        getProxyBidConfig,
+        enableProxyBid,
+        disableProxyBid,
         comments,
         sendAuctionComment,
         isRegistered,
