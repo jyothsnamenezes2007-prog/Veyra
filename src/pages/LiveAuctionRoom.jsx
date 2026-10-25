@@ -28,6 +28,7 @@ import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auction
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
+import { ProxyBiddingControls } from '../components/ProxyBiddingControls';
 
 export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { id } = useParams();
@@ -712,7 +713,8 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
 
               {/* BIDDING CONTROLS OR WINNER ANNOUNCEMENT */}
               {isLive ? (
-                <form onSubmit={handleBidSubmit}>
+                <>
+                  <form onSubmit={handleBidSubmit}>
                   {/* Suggested Increments */}
                   <div style={{ marginBottom: '16px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
@@ -806,8 +808,12 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Bids are legally binding and synchronized across all Veyra trading terminals.
                   </p>
                 </form>
+                {/* Automatic Proxy Bidding Engine Controls */}
+                <ProxyBiddingControls auction={auction} />
+                </>
               ) : isUpcoming ? (
-                /* Auction Upcoming Scheduled State */
+                <>
+                {/* Auction Upcoming Scheduled State */}
                 <div
                   style={{
                     backgroundColor: 'var(--bg-primary)',
@@ -827,6 +833,9 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Terminal bidding controls will activate automatically as soon as the floor countdown concludes.
                   </p>
                 </div>
+                {/* Automatic Proxy Bidding Engine Controls */}
+                <ProxyBiddingControls auction={auction} />
+                </>
               ) : (
                 /* Auction Concluded State */
                 <div

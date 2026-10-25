@@ -7,9 +7,15 @@ import {
   getProductById,
   insertProduct,
   updateProduct,
-  saveDatabase
+  saveDatabase,
+  getProxyConfigs,
+  getProxyConfigByUser,
+  upsertProxyConfig,
+  updateProxyConfig
 } from './db.js';
 import { scheduler } from './scheduler.js';
+import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
+import { verifyGeminiModel } from './gemini.js';
 
 // Connected SSE clients
 const sseClients = new Set();
@@ -539,10 +545,210 @@ export async function handleApiRequest(req, res) {
           bid: newBid
         });
 
+        // Trigger automatic proxy bidding evaluation for competing buyers
+        await evaluateAndExecuteProxyBids(id, broadcastSSE);
+        const finalAuction = getAuctionById(id);
+
         sendJson(res, 200, {
           success: true,
-          auction: updated,
+          auction: finalAuction || updated,
           bid: newBid
+        });
+        return true;
+      } catch (err) {
+        sendJson(res, 500, { success: false, error: err.message });
+        return true;
+      }
+    });
+  }
+
+  // 9b. GET /api/auctions/:id/proxy-bid
+  const proxyGetMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/proxy-bid$/);
+  if (proxyGetMatch && method === 'GET') {
+    const id = proxyGetMatch[1];
+    const userId = url.searchParams.get('userId');
+
+    if (!userId) {
+      sendJson(res, 400, { success: false, error: 'userId query parameter is required.' });
+      return true;
+    }
+
+    const auction = getAuctionById(id);
+    if (!auction) {
+      sendJson(res, 404, { success: false, error: 'Auction lot not found.' });
+      return true;
+    }
+
+    const config = getProxyConfigByUser(id, userId);
+    const geminiStatus = await verifyGeminiModel();
+
+    sendJson(res, 200, {
+      success: true,
+      config: config || null,
+      geminiStatus
+    });
+    return true;
+  }
+
+  // 9c. POST /api/auctions/:id/proxy-bid (Enable / Update proxy bidding)
+  const proxyPostMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/proxy-bid$/);
+  if (proxyPostMatch && method === 'POST') {
+    const id = proxyPostMatch[1];
+    return withAuctionLock(id, async () => {
+      try {
+        const auction = getAuctionById(id);
+        if (!auction) {
+          sendJson(res, 404, { success: false, error: 'Auction lot not found.' });
+          return true;
+        }
+
+        const data = await parseJsonBody(req);
+        const userId = data.userId;
+        const userName = data.userName || data.bidderName || 'Collector';
+        const maxBid = Number(data.maxBid);
+        const preferredIncrement = Number(data.preferredIncrement);
+
+        if (!userId) {
+          sendJson(res, 400, { success: false, error: 'Authentication required. User ID is missing.' });
+          return true;
+        }
+
+        // Sellers cannot bid or proxy bid on own lot
+        if (auction.sellerId && auction.sellerId === userId) {
+          sendJson(res, 403, {
+            success: false,
+            error: 'Sellers are strictly prohibited from bidding on their own auction lots.'
+          });
+          return true;
+        }
+
+        // Auction must not be concluded
+        const now = Date.now();
+        const end = auction.endTimestamp || auction.endTime || 0;
+        if (auction.status === 'ended' || (end > 0 && now >= end)) {
+          sendJson(res, 400, {
+            success: false,
+            error: 'This auction has concluded. Automatic proxy bidding cannot be configured.'
+          });
+          return true;
+        }
+
+        if (isNaN(maxBid) || maxBid <= 0) {
+          sendJson(res, 400, {
+            success: false,
+            error: 'Maximum bid limit must be a valid positive amount.'
+          });
+          return true;
+        }
+
+        if (isNaN(preferredIncrement) || preferredIncrement <= 0) {
+          sendJson(res, 400, {
+            success: false,
+            error: 'Preferred bid increment must be a valid positive amount.'
+          });
+          return true;
+        }
+
+        const minInc = auction.minIncrement || 500;
+        if (preferredIncrement < minInc) {
+          sendJson(res, 400, {
+            success: false,
+            error: `Preferred increment must be at least the auction minimum of ₹${minInc.toLocaleString('en-IN')}.`
+          });
+          return true;
+        }
+
+        const minRequired = auction.bidCount > 0 ? auction.currentBid + minInc : auction.startingBid;
+        if (maxBid < minRequired) {
+          sendJson(res, 400, {
+            success: false,
+            error: `Maximum bid limit must be at least ₹${minRequired.toLocaleString('en-IN')}.`
+          });
+          return true;
+        }
+
+        const savedConfig = upsertProxyConfig({
+          auctionId: id,
+          userId,
+          userName,
+          maxBid,
+          preferredIncrement,
+          status: 'active',
+          stopReason: null
+        });
+
+        broadcastSSE('PROXY_CONFIG_UPDATED', {
+          auctionId: id,
+          config: savedConfig
+        });
+
+        // If auction is active, evaluate immediately
+        if (auction.status === 'active' || auction.status === 'live') {
+          await evaluateAndExecuteProxyBids(id, broadcastSSE);
+        }
+
+        const freshAuction = getAuctionById(id);
+        const freshConfig = getProxyConfigByUser(id, userId);
+        const geminiStatus = await verifyGeminiModel();
+
+        sendJson(res, 200, {
+          success: true,
+          config: freshConfig,
+          auction: freshAuction,
+          geminiStatus
+        });
+        return true;
+      } catch (err) {
+        sendJson(res, 500, { success: false, error: err.message });
+        return true;
+      }
+    });
+  }
+
+  // 9d. POST /api/auctions/:id/proxy-bid/disable or DELETE /api/auctions/:id/proxy-bid
+  const proxyDisableMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/proxy-bid\/(disable)$/) ||
+    (pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/proxy-bid$/) && method === 'DELETE');
+  if (proxyDisableMatch && (method === 'POST' || method === 'DELETE')) {
+    const id = proxyDisableMatch[1];
+    return withAuctionLock(id, async () => {
+      try {
+        let bodyData = {};
+        try {
+          bodyData = await parseJsonBody(req);
+        } catch (e) {}
+
+        const userId = bodyData.userId || url.searchParams.get('userId');
+
+        if (!userId) {
+          sendJson(res, 400, { success: false, error: 'User ID is required to disable proxy bidding.' });
+          return true;
+        }
+
+        const config = getProxyConfigByUser(id, userId);
+        if (!config) {
+          sendJson(res, 404, { success: false, error: 'No proxy configuration found for this user.' });
+          return true;
+        }
+
+        // Ownership validation
+        if (config.userId !== userId) {
+          sendJson(res, 403, { success: false, error: 'Unauthorized: cannot modify another user’s proxy settings.' });
+          return true;
+        }
+
+        const updated = updateProxyConfig(config.id, {
+          status: 'disabled',
+          stopReason: 'Automatic proxy bidding disabled by user.'
+        });
+
+        broadcastSSE('PROXY_CONFIG_UPDATED', {
+          auctionId: id,
+          config: updated
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          config: updated
         });
         return true;
       } catch (err) {

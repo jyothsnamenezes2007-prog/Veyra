@@ -24,6 +24,9 @@ export function initDatabase() {
     try {
       const raw = fs.readFileSync(DB_PATH, 'utf8');
       dbCache = JSON.parse(raw);
+      if (!Array.isArray(dbCache.proxyConfigs)) {
+        dbCache.proxyConfigs = [];
+      }
       console.log(`[Veyra DB] Loaded database with ${dbCache.auctions?.length || 0} auctions, ${dbCache.products?.length || 0} products.`);
       return dbCache;
     } catch (err) {
@@ -84,7 +87,8 @@ export function initDatabase() {
     products: seededProducts,
     auctions: seededAuctions,
     reminders: ['up-2'],
-    registrations: ['up-1']
+    registrations: ['up-1'],
+    proxyConfigs: []
   };
 
   persistDatabaseSync();
@@ -101,9 +105,15 @@ function persistDatabaseSync() {
 export function saveDatabase() {
   saveQueue = saveQueue.then(async () => {
     try {
-      const tmpPath = `${DB_PATH}.tmp`;
-      await fs.promises.writeFile(tmpPath, JSON.stringify(dbCache, null, 2), 'utf8');
-      await fs.promises.rename(tmpPath, DB_PATH);
+      const json = JSON.stringify(dbCache, null, 2);
+      try {
+        const tmpPath = `${DB_PATH}.tmp`;
+        await fs.promises.writeFile(tmpPath, json, 'utf8');
+        await fs.promises.rename(tmpPath, DB_PATH);
+      } catch (renameErr) {
+        // Fallback for Windows file-locking EPERM
+        await fs.promises.writeFile(DB_PATH, json, 'utf8');
+      }
     } catch (err) {
       console.error('[Veyra DB] Error persisting database to disk:', err);
     }
@@ -168,4 +178,70 @@ export function updateProduct(id, updates) {
   db.products[index] = { ...db.products[index], ...updates };
   saveDatabase();
   return db.products[index];
+}
+
+// Proxy bidding operations
+export function getProxyConfigs(auctionId = null) {
+  const db = getDatabase();
+  if (!Array.isArray(db.proxyConfigs)) {
+    db.proxyConfigs = [];
+  }
+  if (auctionId) {
+    return db.proxyConfigs.filter((pc) => pc.auctionId === auctionId);
+  }
+  return db.proxyConfigs;
+}
+
+export function getProxyConfigByUser(auctionId, userId) {
+  const db = getDatabase();
+  if (!Array.isArray(db.proxyConfigs)) {
+    db.proxyConfigs = [];
+  }
+  return db.proxyConfigs.find((pc) => pc.auctionId === auctionId && pc.userId === userId) || null;
+}
+
+export function upsertProxyConfig(config) {
+  const db = getDatabase();
+  if (!Array.isArray(db.proxyConfigs)) {
+    db.proxyConfigs = [];
+  }
+  const idx = db.proxyConfigs.findIndex(
+    (pc) => pc.auctionId === config.auctionId && pc.userId === config.userId
+  );
+  const now = Date.now();
+  if (idx >= 0) {
+    db.proxyConfigs[idx] = {
+      ...db.proxyConfigs[idx],
+      ...config,
+      updatedAt: now
+    };
+    saveDatabase();
+    return db.proxyConfigs[idx];
+  } else {
+    const newConfig = {
+      id: config.id || `pb-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: now,
+      updatedAt: now,
+      ...config
+    };
+    db.proxyConfigs.push(newConfig);
+    saveDatabase();
+    return newConfig;
+  }
+}
+
+export function updateProxyConfig(id, updates) {
+  const db = getDatabase();
+  if (!Array.isArray(db.proxyConfigs)) {
+    db.proxyConfigs = [];
+  }
+  const idx = db.proxyConfigs.findIndex((pc) => pc.id === id);
+  if (idx === -1) return null;
+  db.proxyConfigs[idx] = {
+    ...db.proxyConfigs[idx],
+    ...updates,
+    updatedAt: Date.now()
+  };
+  saveDatabase();
+  return db.proxyConfigs[idx];
 }

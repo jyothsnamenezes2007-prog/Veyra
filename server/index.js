@@ -1,7 +1,37 @@
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { initDatabase } from './db.js';
 import { scheduler } from './scheduler.js';
 import { handleApiRequest } from './api.js';
+
+// Securely load environment variables from root .env.local if present
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootEnvLocal = path.resolve(__dirname, '..', '.env.local');
+
+if (fs.existsSync(rootEnvLocal)) {
+  if (typeof process.loadEnvFile === 'function') {
+    try {
+      process.loadEnvFile(rootEnvLocal);
+    } catch (e) {}
+  } else {
+    try {
+      const raw = fs.readFileSync(rootEnvLocal, 'utf8');
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx !== -1) {
+          const k = trimmed.slice(0, eqIdx).trim();
+          const v = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '');
+          if (!process.env[k]) process.env[k] = v;
+        }
+      }
+    } catch (e) {}
+  }
+}
 
 const PORT = process.env.PORT || 3001;
 
