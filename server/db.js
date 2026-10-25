@@ -105,9 +105,15 @@ function persistDatabaseSync() {
 export function saveDatabase() {
   saveQueue = saveQueue.then(async () => {
     try {
-      const tmpPath = `${DB_PATH}.tmp`;
-      await fs.promises.writeFile(tmpPath, JSON.stringify(dbCache, null, 2), 'utf8');
-      await fs.promises.rename(tmpPath, DB_PATH);
+      const json = JSON.stringify(dbCache, null, 2);
+      try {
+        const tmpPath = `${DB_PATH}.tmp`;
+        await fs.promises.writeFile(tmpPath, json, 'utf8');
+        await fs.promises.rename(tmpPath, DB_PATH);
+      } catch (renameErr) {
+        // Fallback for Windows file-locking EPERM
+        await fs.promises.writeFile(DB_PATH, json, 'utf8');
+      }
     } catch (err) {
       console.error('[Veyra DB] Error persisting database to disk:', err);
     }

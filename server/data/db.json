@@ -750,6 +750,347 @@
   ],
   "auctions": [
     {
+      "id": "auc-proxy-test-1792912706200",
+      "productId": "prod-proxy-test-1792912706200",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashmiri Walnut Credenza",
+      "seller": "Kashmir Guild Atelier",
+      "sellerId": "seller-guild-1",
+      "startingBid": 90000,
+      "currentBid": 100000,
+      "minIncrement": 1000,
+      "bidCount": 9,
+      "bidHistory": [
+        {
+          "id": "pb-1792912732222-8wdm",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 100000,
+          "time": "Just now",
+          "timestamp": 1792912732222,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912727216-f8jc",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 99000,
+          "time": "Just now",
+          "timestamp": 1792912727216
+        },
+        {
+          "id": "pb-1792912727182-f4k1",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 98000,
+          "time": "Just now",
+          "timestamp": 1792912727183,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912722166-2mc0",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 97000,
+          "time": "Just now",
+          "timestamp": 1792912722166
+        },
+        {
+          "id": "pb-1792912722134-19s8",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 96000,
+          "time": "Just now",
+          "timestamp": 1792912722134,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912717127-2sye",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 95000,
+          "time": "Just now",
+          "timestamp": 1792912717127
+        },
+        {
+          "id": "pb-1792912717084-j03h",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 92000,
+          "time": "Just now",
+          "timestamp": 1792912717084,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912712080-e62t",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 91000,
+          "time": "Just now",
+          "timestamp": 1792912712080
+        },
+        {
+          "id": "pb-1792912712039-x3k2",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 90000,
+          "time": "Just now",
+          "timestamp": 1792912712039,
+          "isProxyBid": true
+        }
+      ],
+      "startTimestamp": 1792912676200,
+      "scheduledTimestamp": 1792912676200,
+      "endTimestamp": 1792916306200,
+      "endTime": 1792912705200,
+      "remainingSeconds": 0,
+      "approvalStatus": "approved",
+      "status": "ended",
+      "winner": null
+    },
+    {
+      "id": "auc-proxy-test-1792912399956",
+      "productId": "prod-proxy-test-1792912399956",
+      "type": "auction",
+      "isAuction": true,
+      "name": "Archival Kashmiri Walnut Credenza",
+      "seller": "Kashmir Guild Atelier",
+      "sellerId": "seller-guild-1",
+      "startingBid": 90000,
+      "currentBid": 122000,
+      "minIncrement": 1000,
+      "bidCount": 25,
+      "bidHistory": [
+        {
+          "id": "b-1792913146590-5vfc",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 122000,
+          "time": "Just now",
+          "timestamp": 1792913146590
+        },
+        {
+          "id": "pb-1792913139713-3ri7",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 118000,
+          "time": "Just now",
+          "timestamp": 1792913139713,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792913134662-10yy",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 117000,
+          "time": "Just now",
+          "timestamp": 1792913134662
+        },
+        {
+          "id": "pb-1792913126139-sw4t",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 113000,
+          "time": "Just now",
+          "timestamp": 1792913126139,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913125725-kavw",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 112000,
+          "time": "Just now",
+          "timestamp": 1792913125725,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913125284-mz97",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 111000,
+          "time": "Just now",
+          "timestamp": 1792913125284,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913124917-xu9v",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 110000,
+          "time": "Just now",
+          "timestamp": 1792913124917,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913124507-apfy",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 109000,
+          "time": "Just now",
+          "timestamp": 1792913124507,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913124138-1pdq",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 108000,
+          "time": "Just now",
+          "timestamp": 1792913124138,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913123276-m9e4",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 107000,
+          "time": "Just now",
+          "timestamp": 1792913123276,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913122784-a7nt",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 106000,
+          "time": "Just now",
+          "timestamp": 1792913122784,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913117741-m92f",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 105000,
+          "time": "Just now",
+          "timestamp": 1792913117741,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913112703-tgps",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 104000,
+          "time": "Just now",
+          "timestamp": 1792913112703,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913090246-5p78",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 103000,
+          "time": "Just now",
+          "timestamp": 1792913090246,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913085177-ixnk",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 102000,
+          "time": "Just now",
+          "timestamp": 1792913085177,
+          "isProxyBid": true
+        },
+        {
+          "id": "pb-1792913080773-3qeu",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 101000,
+          "time": "Just now",
+          "timestamp": 1792913080773,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912732261-d3ta",
+          "bidder": "Manual Specialist",
+          "bidderId": "buyer-manual-test",
+          "amount": 100000,
+          "time": "Just now",
+          "timestamp": 1792912732261
+        },
+        {
+          "id": "b-1792912438178-visv",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 99000,
+          "time": "Just now",
+          "timestamp": 1792912438178
+        },
+        {
+          "id": "pb-1792912438147-lqiu",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 98000,
+          "time": "Just now",
+          "timestamp": 1792912438147,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912427791-qhw7",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 97000,
+          "time": "Just now",
+          "timestamp": 1792912427791
+        },
+        {
+          "id": "pb-1792912427729-a65s",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 96000,
+          "time": "Just now",
+          "timestamp": 1792912427729,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912421527-p677",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 95000,
+          "time": "Just now",
+          "timestamp": 1792912421527
+        },
+        {
+          "id": "pb-1792912421494-y96n",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 92000,
+          "time": "Just now",
+          "timestamp": 1792912421494,
+          "isProxyBid": true
+        },
+        {
+          "id": "b-1792912413849-z8nl",
+          "bidder": "Beta Collector",
+          "bidderId": "buyer-beta",
+          "amount": 91000,
+          "time": "Just now",
+          "timestamp": 1792912413849
+        },
+        {
+          "id": "pb-1792912413815-atia",
+          "bidder": "Alpha Collector",
+          "bidderId": "buyer-alpha",
+          "amount": 90000,
+          "time": "Just now",
+          "timestamp": 1792912413815,
+          "isProxyBid": true
+        }
+      ],
+      "startTimestamp": 1792912369956,
+      "scheduledTimestamp": 1792912369956,
+      "endTimestamp": 1792915999956,
+      "endTime": 1792915999956,
+      "remainingSeconds": 2853,
+      "approvalStatus": "approved",
+      "status": "active",
+      "winner": null
+    },
+    {
       "id": "auc-lot-1792830630677",
       "productId": "prod-1792830630677",
       "type": "auction",
@@ -828,13 +1169,23 @@
       "estimatedValue": 45000,
       "minIncrement": 400,
       "reservePrice": null,
-      "bidCount": 0,
-      "bidHistory": [],
+      "bidCount": 1,
+      "bidHistory": [
+        {
+          "id": "pb-1792911532260-u8mu",
+          "bidder": "Lahari R Prabhu",
+          "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+          "amount": 8100,
+          "time": "Just now",
+          "timestamp": 1792911532260,
+          "isProxyBid": true
+        }
+      ],
       "startTimestamp": 1792845000000,
       "scheduledTimestamp": 1792845000000,
       "endTimestamp": 1792942200000,
       "endTime": 1792942200000,
-      "remainingSeconds": 77756,
+      "remainingSeconds": 29053,
       "approvalStatus": "approved",
       "status": "active",
       "winner": null,
@@ -1217,7 +1568,7 @@
       "startTimestamp": 1792995092859,
       "endTimestamp": 1793254292859,
       "endTime": 1793254292859,
-      "remainingSeconds": 164191,
+      "remainingSeconds": 81946,
       "winner": null,
       "bidHistory": []
     },
@@ -1242,7 +1593,7 @@
       "startTimestamp": 1793167892859,
       "endTimestamp": 1793427092859,
       "endTime": 1793427092859,
-      "remainingSeconds": 336991,
+      "remainingSeconds": 254746,
       "winner": null,
       "bidHistory": []
     },
@@ -1267,7 +1618,7 @@
       "startTimestamp": 1793340692859,
       "endTimestamp": 1793599892859,
       "endTime": 1793599892859,
-      "remainingSeconds": 509791,
+      "remainingSeconds": 427546,
       "winner": null,
       "bidHistory": []
     },
@@ -1292,7 +1643,7 @@
       "startTimestamp": 1793513492859,
       "endTimestamp": 1793772692859,
       "endTime": 1793772692859,
-      "remainingSeconds": 682591,
+      "remainingSeconds": 600346,
       "winner": null,
       "bidHistory": []
     }
@@ -1302,5 +1653,67 @@
   ],
   "registrations": [
     "up-1"
+  ],
+  "proxyConfigs": [
+    {
+      "id": "pb-1792911532237-tkvk",
+      "createdAt": 1792911532237,
+      "updatedAt": 1792911532260,
+      "auctionId": "auc-lot-1792823789759",
+      "userId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+      "userName": "Lahari R Prabhu",
+      "maxBid": 8900,
+      "preferredIncrement": 400,
+      "status": "active",
+      "stopReason": null,
+      "lastBidAmount": 8100,
+      "lastBidTime": 1792911532260,
+      "aiReasoning": null
+    },
+    {
+      "id": "pb-1792912400033-9kim",
+      "createdAt": 1792912400033,
+      "updatedAt": 1792913146590,
+      "auctionId": "auc-proxy-test-1792912399956",
+      "userId": "buyer-alpha",
+      "userName": "Alpha Collector",
+      "maxBid": 120000,
+      "preferredIncrement": 1000,
+      "status": "outbid_stopped",
+      "stopReason": "Next valid bid of ₹1,23,000 exceeds your maximum authorized limit of ₹1,20,000.",
+      "lastBidAmount": 118000,
+      "lastBidTime": 1792913139713,
+      "aiReasoning": null
+    },
+    {
+      "id": "pb-1792912706274-zpog",
+      "createdAt": 1792912706274,
+      "updatedAt": 1792912732222,
+      "auctionId": "auc-proxy-test-1792912706200",
+      "userId": "buyer-alpha",
+      "userName": "Alpha Collector",
+      "maxBid": 120000,
+      "preferredIncrement": 1000,
+      "status": "active",
+      "stopReason": null,
+      "lastBidAmount": 100000,
+      "lastBidTime": 1792912732222,
+      "aiReasoning": null
+    },
+    {
+      "id": "pb-1792913076671-fvrd",
+      "createdAt": 1792913076671,
+      "updatedAt": 1792913126161,
+      "auctionId": "auc-proxy-test-1792912399956",
+      "userId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+      "userName": "Lahari R Prabhu",
+      "maxBid": 113000,
+      "preferredIncrement": 1000,
+      "status": "outbid_stopped",
+      "stopReason": "Next valid bid of ₹1,14,000 exceeds your maximum authorized limit of ₹1,13,000.",
+      "lastBidAmount": 112000,
+      "lastBidTime": 1792913125725,
+      "aiReasoning": null
+    }
   ]
 }
