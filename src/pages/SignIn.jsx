@@ -11,7 +11,7 @@ export const SignIn = () => {
   const location = useLocation();
 
   // Redirect destination after successful login
-  const redirectPath = new URLSearchParams(location.search).get('redirect') || '/explore';
+  const redirectPath = new URLSearchParams(location.search).get('redirect') || '/';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
