@@ -34,6 +34,17 @@ export const Navbar = () => {
   const { user, signOut } = useAuth();
 
   const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    setIsProfileOpen(false);
+    setIsMobileMenuOpen(false);
+    try {
+      await signOut();
+    } catch (err) {
+      console.warn('Sign out error:', err);
+    }
+    navigate('/');
+  };
   const location = useLocation();
   const dropdownRef = useRef(null);
 
@@ -382,7 +393,7 @@ export const Navbar = () => {
                       overflow: 'hidden'
                     }}
                   >
-                    {/* GROUP 1 — Account Identity */}
+                    {/* GROUP 1 - Account Identity */}
                     <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div
                         style={{
@@ -483,7 +494,8 @@ export const Navbar = () => {
                     {/* GROUP 4 - Support & Account */}
                     <div style={{ padding: '6px 0' }}>
                       <Link
-                        to="/help"
+                        to="/"
+                        onClick={() => setIsProfileOpen(false)}
                         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 16px', fontSize: '13px', color: 'var(--text-primary)' }}
                         className="dropdown-item"
                       >
@@ -499,7 +511,7 @@ export const Navbar = () => {
                         <span>Account Settings</span>
                       </Link>
                       <button
-                        onClick={signOut}
+                        onClick={handleSignOut}
                         style={{
                           width: '100%',
                           display: 'flex',
@@ -570,25 +582,6 @@ export const Navbar = () => {
               scrollbarWidth: 'none'
             }}
           >
-            <NavLink
-              to="/categories"
-              className={({ isActive }) =>
-                `subnav-link ${isActive ? 'subnav-link-active' : ''}`
-              }
-              style={{
-                fontSize: '13px',
-                letterSpacing: '0.04em',
-                fontWeight: 500,
-                color: 'var(--text-primary)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: '100%',
-                position: 'relative'
-              }}
-            >
-              All Categories
-            </NavLink>
-
             <NavLink
               to="/shop"
               className={({ isActive }) =>
@@ -768,20 +761,6 @@ export const Navbar = () => {
                 </span>
 
                 <Link
-                  to="/categories"
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-xs)',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    color: 'var(--text-primary)'
-                  }}
-                  className="mobile-item"
-                >
-                  All Categories
-                </Link>
-
-                <Link
                   to="/shop"
                   style={{
                     padding: '10px 12px',
@@ -947,7 +926,7 @@ export const Navbar = () => {
             <div style={{ paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
               {user ? (
                 <button
-                  onClick={signOut}
+                  onClick={handleSignOut}
                   className="btn btn-secondary"
                   style={{ width: '100%', height: '40px', fontSize: '13px' }}
                 >

@@ -10,7 +10,7 @@ export const SignUp = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const redirectPath = new URLSearchParams(location.search).get('redirect') || '/explore';
+  const redirectPath = new URLSearchParams(location.search).get('redirect') || '/';
 
   const [formData, setFormData] = useState({
     name: '',
