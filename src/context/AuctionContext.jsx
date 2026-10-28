@@ -9,6 +9,7 @@ import {
   getMeetingAccess
 } from '../data/auctions';
 import { useToast } from './ToastContext';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const AuctionContext = createContext(null);
 const AUCTIONS_STORAGE_KEY = 'veyra_live_auctions_data';
@@ -81,7 +82,114 @@ export const AuctionProvider = ({ children }) => {
   });
 
   // 3. Base Upcoming auctions
-  const [baseUpcomingAuctions] = useState(UPCOMING_AUCTIONS);
+  const [baseUpcomingAuctions, setBaseUpcomingAuctions] = useState(UPCOMING_AUCTIONS);
+  const [isSupabaseAuctionsLoading, setIsSupabaseAuctionsLoading] = useState(false);
+
+  // Synchronize live and upcoming auctions with Supabase
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    let isMounted = true;
+    setIsSupabaseAuctionsLoading(true);
+
+    async function fetchSupabaseAuctions() {
+      try {
+        const { data, error } = await supabase
+          .from('auctions')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.warn('Error reading auctions from Supabase:', error.message);
+          return;
+        }
+
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          const now = Date.now();
+          const liveList = [];
+          const upcomingList = [];
+
+          data.forEach((row) => {
+            const isUpcoming =
+              row.status === 'upcoming' ||
+              row.status === 'scheduled' ||
+              (row.starts_at && new Date(row.starts_at).getTime() > now);
+
+            if (isUpcoming) {
+              const baseline =
+                UPCOMING_AUCTIONS.find((a) => a.id === row.legacy_id || a.id === row.id) || {};
+              const schedTimestamp = row.starts_at
+                ? new Date(row.starts_at).getTime()
+                : baseline.scheduledTimestamp || now + 86400000;
+              upcomingList.push({
+                ...baseline,
+                id: row.legacy_id || row.id,
+                supabaseId: row.id,
+                name: row.title || baseline.name || 'Curated Lot',
+                maker: row.seller_name || baseline.maker || baseline.seller || 'Studio Workshop',
+                seller: row.seller_name || baseline.seller || 'Studio Workshop',
+                scheduledTimestamp: schedTimestamp,
+                startingBid: Number(row.starting_price || baseline.startingBid || 0),
+                currentBid: Number(row.current_price || row.starting_price || baseline.currentBid || 0),
+                thumbnail: row.image_url || baseline.thumbnail || '',
+                image: row.image_url || baseline.thumbnail || '',
+                description: row.description || baseline.description || '',
+                status: 'upcoming'
+              });
+            } else {
+              const baseline =
+                INITIAL_LIVE_AUCTIONS.find((a) => a.id === row.legacy_id || a.id === row.id) || {};
+              const start = row.starts_at ? new Date(row.starts_at).getTime() : now - 60000;
+              const end = row.ends_at ? new Date(row.ends_at).getTime() : now + 7200000;
+              const isEnded = row.status === 'ended' || now >= end;
+              const remainingSeconds = isEnded ? 0 : Math.max(0, Math.floor((end - now) / 1000));
+              liveList.push({
+                ...baseline,
+                id: row.legacy_id || row.id,
+                supabaseId: row.id,
+                name: row.title || baseline.name || 'Curated Lot',
+                maker: row.seller_name || baseline.maker || baseline.seller || 'Studio Workshop',
+                seller: row.seller_name || baseline.seller || 'Studio Workshop',
+                startingBid: Number(row.starting_price || baseline.startingBid || 0),
+                currentBid: Number(row.current_price || row.starting_price || baseline.currentBid || 0),
+                startTimestamp: start,
+                scheduledTimestamp: start,
+                endTimestamp: end,
+                endTime: end,
+                remainingSeconds,
+                status: isEnded ? 'ended' : 'active',
+                image: row.image_url || baseline.image || '',
+                images:
+                  baseline.images && baseline.images.length > 0
+                    ? baseline.images
+                    : [row.image_url || baseline.image].filter(Boolean),
+                description: row.description || baseline.description || '',
+                type: 'auction',
+                isAuction: true,
+                approvalStatus: 'approved'
+              });
+            }
+          });
+
+          if (liveList.length > 0) {
+            setLiveAuctions(liveList);
+          }
+          if (upcomingList.length > 0) {
+            setBaseUpcomingAuctions(upcomingList);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to connect to Supabase auctions table:', err);
+      } finally {
+        if (isMounted) setIsSupabaseAuctionsLoading(false);
+      }
+    }
+
+    fetchSupabaseAuctions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // 4. User auction registrations
   const [registrations, setRegistrations] = useState(() => {
@@ -594,6 +702,27 @@ export const AuctionProvider = ({ children }) => {
       };
 
       try {
+        // Try Supabase persistence if user is authenticated
+        if (supabase) {
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            await supabase.from('auctions').insert({
+              title: payload.name,
+              description: payload.description || '',
+              starting_price: payload.startingBid,
+              current_price: payload.startingBid,
+              starts_at: new Date(payload.startTimestamp).toISOString(),
+              ends_at: new Date(payload.endTimestamp).toISOString(),
+              seller_id: user ? user.id : null,
+              seller_name: user?.user_metadata?.username || user?.user_metadata?.full_name || payload.seller || 'Studio Atelier',
+              image_url: payload.image || (payload.images && payload.images[0]) || '',
+              status: 'upcoming'
+            });
+          } catch (e) {
+            console.warn('Could not insert auction lot to Supabase:', e);
+          }
+        }
+
         const res = await fetch('/api/auctions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1253,7 +1382,7 @@ export const AuctionProvider = ({ children }) => {
   // Registrations
   const isRegistered = (auctionId) => registrations.includes(auctionId);
   const toggleRegistration = (auctionId) => {
-    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId);
+    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId || a.supabaseId === auctionId);
     const title = auction ? auction.name : 'Auction';
 
     if (registrations.includes(auctionId)) {
@@ -1268,7 +1397,7 @@ export const AuctionProvider = ({ children }) => {
   // Reminders
   const isReminderSet = (auctionId) => reminders.includes(auctionId);
   const toggleReminder = (auctionId) => {
-    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId);
+    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId || a.supabaseId === auctionId);
     const title = auction ? auction.name : 'Auction';
 
     if (reminders.includes(auctionId)) {
@@ -1282,7 +1411,7 @@ export const AuctionProvider = ({ children }) => {
 
   // Leaderboard
   const getLeaderboard = (auctionId) => {
-    const auction = combinedLiveAuctions.find((a) => a.id === auctionId || a.productId === auctionId);
+    const auction = combinedLiveAuctions.find((a) => a.id === auctionId || a.productId === auctionId || a.supabaseId === auctionId);
     if (!auction || !auction.bidHistory || auction.bidHistory.length === 0) {
       return [];
     }
