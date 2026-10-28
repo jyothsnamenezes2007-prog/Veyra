@@ -1,12 +1,15 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { PRODUCTS, CATEGORIES } from '../data/products';
 import { useToast } from './ToastContext';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const ProductsContext = createContext(null);
 const CUSTOM_PRODUCTS_KEY = 'veyra_custom_products';
 
 export const ProductsProvider = ({ children }) => {
   const { addToast } = useToast();
+  const [supabaseProducts, setSupabaseProducts] = useState([]);
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState(false);
   const [customProducts, setCustomProducts] = useState(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
@@ -24,7 +27,62 @@ export const ProductsProvider = ({ children }) => {
     }
   }, [customProducts]);
 
-  // Synchronize with server
+  // 1. Fetch persistent products from Supabase
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+    let isMounted = true;
+    setIsSupabaseLoading(true);
+
+    async function fetchSupabaseCatalog() {
+      try {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.warn('Error reading products from Supabase:', error.message);
+          return;
+        }
+
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          const mapped = data.map((row) => {
+            const baseline = PRODUCTS.find((p) => p.id === row.legacy_id || p.id === row.id) || {};
+            return {
+              ...baseline,
+              id: row.legacy_id || row.id,
+              supabaseId: row.id,
+              name: row.title || baseline.name || 'Artisan Creation',
+              title: row.title || baseline.title || baseline.name || 'Artisan Creation',
+              description: row.description || baseline.description || '',
+              price: Number(row.price || baseline.price || 0),
+              category: row.category || baseline.category || 'Handmade',
+              seller: row.seller_name || baseline.seller || 'Studio Artisan',
+              sellerName: row.seller_name || baseline.seller || 'Studio Artisan',
+              image: row.image_url || baseline.image || '',
+              images: baseline.images && baseline.images.length > 0 ? baseline.images : [row.image_url || baseline.image].filter(Boolean),
+              status: row.status || 'active',
+              inStock: baseline.inStock !== undefined ? baseline.inStock : true,
+              rating: baseline.rating || 5.0
+            };
+          });
+          setSupabaseProducts(mapped);
+        }
+      } catch (err) {
+        console.warn('Failed to connect to Supabase products table:', err);
+      } finally {
+        if (isMounted) setIsSupabaseLoading(false);
+      }
+    }
+
+    fetchSupabaseCatalog();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Synchronize with local server database
   useEffect(() => {
     let isMounted = true;
     fetch('/api/products')
@@ -52,7 +110,13 @@ export const ProductsProvider = ({ children }) => {
     };
   }, []);
 
-  const allProducts = [...customProducts, ...PRODUCTS];
+  // Base catalog: Prefer Supabase products if loaded, fallback to PRODUCTS sample catalog
+  const allProducts = useMemo(() => {
+    const baseCatalog = supabaseProducts.length > 0 ? supabaseProducts : PRODUCTS;
+    const baseIds = new Set(baseCatalog.map((p) => p.id));
+    const uniqueCustom = customProducts.filter((p) => !baseIds.has(p.id));
+    return [...uniqueCustom, ...baseCatalog];
+  }, [customProducts, supabaseProducts]);
 
   const addProduct = useCallback(async (productData) => {
     const isAuction = productData.isAuction === true || productData.type === 'auction';
@@ -85,13 +149,32 @@ export const ProductsProvider = ({ children }) => {
       }).catch(() => {});
     } catch (e) {}
 
+    // Try Supabase persistence if configured
+    if (supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from('products').insert({
+          title: newProduct.name || newProduct.title,
+          description: newProduct.description,
+          price: Number(newProduct.price),
+          category: newProduct.category,
+          seller_id: user ? user.id : null,
+          seller_name: user?.user_metadata?.username || user?.user_metadata?.full_name || newProduct.seller || 'Artisan Seller',
+          image_url: newProduct.image || (newProduct.images && newProduct.images[0]) || '',
+          status: 'active'
+        });
+      } catch (err) {
+        console.warn('Could not insert product into Supabase:', err);
+      }
+    }
+
     setCustomProducts((prev) => [newProduct, ...prev]);
     return newProduct;
   }, []);
 
   const getProductById = useCallback(
     (id) => {
-      return allProducts.find((p) => p.id === id || p.auctionId === id || p.upcomingId === id);
+      return allProducts.find((p) => p.id === id || p.supabaseId === id || p.auctionId === id || p.upcomingId === id);
     },
     [allProducts]
   );
@@ -185,7 +268,8 @@ export const ProductsProvider = ({ children }) => {
         getProductById,
         getMyProducts,
         updateProductStatus,
-        deleteProduct
+        deleteProduct,
+        isSupabaseLoading
       }}
     >
       {children}
