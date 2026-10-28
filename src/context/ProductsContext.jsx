@@ -76,17 +76,26 @@ export const ProductsProvider = ({ children }) => {
           : [productData.image]
     };
 
-    // Try server persistence
+    // Authoritative server persistence
     try {
-      fetch('/api/products', {
+      const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProduct)
-      }).catch(() => {});
-    } catch (e) {}
+      });
 
-    setCustomProducts((prev) => [newProduct, ...prev]);
-    return newProduct;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to publish listing.');
+      }
+
+      const savedProduct = data.product || newProduct;
+      setCustomProducts((prev) => [savedProduct, ...prev]);
+      return savedProduct;
+    } catch (e) {
+      console.error('[ProductsContext] Upload error:', e.message);
+      throw e;
+    }
   }, []);
 
   const getProductById = useCallback(
