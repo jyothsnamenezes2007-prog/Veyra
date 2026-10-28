@@ -16,6 +16,7 @@ import {
   Store,
   Clock,
   MessageSquare,
+  Bell,
   HelpCircle,
   UserPlus,
   ClipboardList
@@ -448,12 +449,12 @@ export const Navbar = () => {
                         <span>My Auctions & Bids</span>
                       </Link>
                       <Link
-                        to="/account?tab=messages"
+                        to="/account?tab=notifications"
                         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 16px', fontSize: '13px', color: 'var(--text-primary)' }}
                         className="dropdown-item"
                       >
-                        <MessageSquare size={16} color="var(--text-secondary)" />
-                        <span>Messages</span>
+                        <Bell size={16} color="var(--text-secondary)" />
+                        <span>Notifications</span>
                       </Link>
                       <Link
                         to="/schedule"

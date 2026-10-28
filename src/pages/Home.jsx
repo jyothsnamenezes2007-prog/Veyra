@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CategoryCarousel } from '../components/CategoryCarousel';
+import { RecommendedSection } from '../components/RecommendedSection';
 import { WhyVeyra } from '../components/WhyVeyra';
 import { QuickBidModal } from '../components/QuickBidModal';
 import { useAuctions } from '../context/AuctionContext';
@@ -20,7 +21,16 @@ export const Home = () => {
       />
 
       {/* ====================================================================
-          2. WHY VEYRA CORE PILLARS
+          2. RECOMMENDED FOR YOU (ONGOING & UPCOMING)
+          ==================================================================== */}
+      <RecommendedSection
+        liveAuctions={liveAuctions}
+        upcomingAuctions={upcomingAuctions}
+        onOpenBidModal={setSelectedBidAuction}
+      />
+
+      {/* ====================================================================
+          3. WHY VEYRA CORE PILLARS
           ==================================================================== */}
       <WhyVeyra />
 

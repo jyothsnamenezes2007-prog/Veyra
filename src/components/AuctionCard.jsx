@@ -63,10 +63,24 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
 
         {/* Live Badge Indicator */}
         <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 2 }}>
-          {isLive ? (
+          {auction.status === 'scheduled' || auction.status === 'upcoming' || (auction.startTimestamp && Date.now() < auction.startTimestamp && !isLive) ? (
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '3px 8px',
+                backgroundColor: 'rgba(212, 163, 115, 0.95)',
+                color: '#3B2314',
+                letterSpacing: '0.05em',
+                borderRadius: 'var(--radius-xs)',
+                fontWeight: 700
+              }}
+            >
+              SCHEDULED
+            </span>
+          ) : isLive ? (
             <span className="badge-live">
               <span className="dot" />
-              LIVE AUCTION
+              ONGOING
             </span>
           ) : (
             <span

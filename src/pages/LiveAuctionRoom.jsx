@@ -50,6 +50,25 @@ const formatCommentTimestamp = (msg) => {
   return new Date(timeNum).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
 };
 
+const formatBidAcceptedTime = (bid, nowTime) => {
+  if (!bid) return 'No bids placed';
+  const ts = bid.timestamp || bid.createdAt;
+  if (!ts) return bid.time || 'Time unavailable';
+  const timeNum = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  if (isNaN(timeNum) || timeNum <= 0) return bid.time || 'Time unavailable';
+
+  const diffMs = (nowTime || Date.now()) - timeNum;
+  if (diffMs < 0) return 'Just now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? '' : 's'} ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+};
+
 export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -63,6 +82,14 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { addToast } = useToast();
   const [showUnauthorizedModal, setShowUnauthorizedModal] = useState(false);
   const [unauthorizedNotice, setUnauthorizedNotice] = useState('');
+  const [tickerTime, setTickerTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTickerTime(Date.now());
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Find authoritative auction
   const auction = liveAuctions.find((a) => a.id === id || a.productId === id) || liveAuctions[0];
@@ -983,11 +1010,15 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Current Leader:</span>
-                  <strong style={{ color: 'var(--text-primary)' }}>{leadingBidder?.bidder || 'Singhania A.'}</strong>
+                  <strong style={{ color: 'var(--text-primary)' }}>
+                    {auction.bidHistory?.[0]?.bidder || leadingBidder?.bidder || 'Singhania A.'}
+                  </strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Accepted Time:</span>
-                  <span style={{ color: 'var(--text-secondary)' }}>{auction.bidHistory?.[0]?.time || 'Just now'}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {formatBidAcceptedTime(auction.bidHistory?.[0], tickerTime)}
+                  </span>
                 </div>
               </div>
 
@@ -1036,8 +1067,10 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                       }}
                     >
                       <div>
-                        <strong style={{ color: 'var(--text-primary)' }}>{bh.bidder}</strong>
-                        <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px' }}>{bh.time}</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{bh.bidder || 'Collector'}</strong>
+                        <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '10px' }}>
+                          {formatBidAcceptedTime(bh, tickerTime)}
+                        </span>
                       </div>
                       <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                         {formatINR(bh.amount)}

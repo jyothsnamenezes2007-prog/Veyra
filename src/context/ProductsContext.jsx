@@ -148,6 +148,33 @@ export const ProductsProvider = ({ children }) => {
     }
   }, []);
 
+  const deleteProduct = useCallback(async (productId, user) => {
+    try {
+      const userId = user?.id || (typeof user === 'string' ? user : null);
+      const userName = user?.name || user?.username || '';
+      const res = await fetch(`/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, userName })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) {
+        addToast(data.error || 'Unauthorized: cannot delete this product.');
+        return { success: false, error: data.error };
+      }
+      if (!res.ok) {
+        addToast(data.error || 'Failed to delete product.');
+        return { success: false, error: data.error };
+      }
+    } catch (e) {
+      // Local fallback if offline
+    }
+
+    setCustomProducts((prev) => prev.filter((p) => p.id !== productId));
+    addToast('Product successfully deleted from your listings.');
+    return { success: true };
+  }, [addToast]);
+
   return (
     <ProductsContext.Provider
       value={{
@@ -157,7 +184,8 @@ export const ProductsProvider = ({ children }) => {
         addProduct,
         getProductById,
         getMyProducts,
-        updateProductStatus
+        updateProductStatus,
+        deleteProduct
       }}
     >
       {children}

@@ -221,6 +221,15 @@ export function updateProduct(id, updates) {
   return db.products[index];
 }
 
+export function deleteProduct(id) {
+  const db = getDatabase();
+  const index = db.products.findIndex((p) => p.id === id);
+  if (index === -1) return false;
+  const removed = db.products.splice(index, 1)[0];
+  saveDatabase();
+  return removed;
+}
+
 // Proxy bidding operations
 export function getProxyConfigs(auctionId = null) {
   const db = getDatabase();

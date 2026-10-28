@@ -16,7 +16,8 @@ import {
   Save,
   UserCircle,
   Video,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useProducts } from '../context/ProductsContext';
@@ -123,7 +124,7 @@ export const MyProducts = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const { customProducts, updateProductStatus } = useProducts();
+  const { customProducts, updateProductStatus, deleteProduct } = useProducts();
   const { liveAuctions, customAuctions, approveAuctionLot, rescheduleAuctionLot, rejectAuctionLot } = useAuctions();
   const { orders } = useCart();
   const { getSellerProfile, updateSellerProfile } = useSellerProfile();
@@ -131,6 +132,7 @@ export const MyProducts = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [activeMeetingAuction, setActiveMeetingAuction] = useState(null);
   const [rescheduleAuction, setRescheduleAuction] = useState(null);
+  const [productToDelete, setProductToDelete] = useState(null);
 
   // Profile edit panel state
   const [profileEditOpen, setProfileEditOpen] = useState(false);
@@ -589,9 +591,101 @@ export const MyProducts = () => {
                 rejectAuctionLot={rejectAuctionLot}
                 onOpenMeeting={setActiveMeetingAuction}
                 onRequireReschedule={setRescheduleAuction}
+                onDeleteProduct={setProductToDelete}
                 currentUser={user}
               />
             ))}
+          </div>
+        )}
+
+        {/* Delete Sold Product Confirmation Modal */}
+        {productToDelete && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1100,
+              backgroundColor: 'rgba(25, 25, 25, 0.7)',
+              backdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px'
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 'var(--radius-xs)',
+                maxWidth: '460px',
+                width: '100%',
+                padding: '28px',
+                border: '1px solid var(--border-color)',
+                boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(158, 58, 58, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--error-color)',
+                    flexShrink: 0
+                  }}
+                >
+                  <Trash2 size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Delete Sold Product?</h3>
+                  <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Listing ID: {productToDelete.id}
+                  </p>
+                </div>
+              </div>
+
+              <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
+                Are you sure you want to delete <strong>{productToDelete.name}</strong> from your active product listings?
+                <br /><br />
+                <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 500 }}>
+                  Data Safety Guarantee: All historical auction records, bids, order invoices, and payment audits will remain securely preserved.
+                </span>
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setProductToDelete(null)}
+                  className="btn btn-secondary"
+                  style={{ height: '38px', padding: '0 18px', fontSize: '13px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await deleteProduct(productToDelete.id, user);
+                    setProductToDelete(null);
+                  }}
+                  className="btn btn-burgundy"
+                  style={{
+                    height: '38px',
+                    padding: '0 20px',
+                    fontSize: '13px',
+                    backgroundColor: 'var(--error-color)',
+                    borderColor: 'var(--error-color)'
+                  }}
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -639,6 +733,7 @@ const ProductRow = ({
   rejectAuctionLot,
   onOpenMeeting,
   onRequireReschedule,
+  onDeleteProduct,
   currentUser
 }) => {
   const isAuction = product.isAuction || product.type === 'auction';
@@ -822,6 +917,29 @@ const ProductRow = ({
             >
               <Video size={12} />
               <span>Meet Winner</span>
+            </button>
+          )}
+          {product.derivedStatus === 'sold' && (
+            <button
+              type="button"
+              onClick={() => onDeleteProduct && onDeleteProduct(product)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '5px 9px',
+                backgroundColor: 'rgba(158, 58, 58, 0.08)',
+                color: 'var(--error-color)',
+                border: '1px solid rgba(158, 58, 58, 0.25)',
+                borderRadius: 'var(--radius-xs)',
+                fontSize: '11px',
+                gap: '4px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              title="Delete sold product"
+            >
+              <Trash2 size={12} />
+              <span>Delete</span>
             </button>
           )}
         </div>

@@ -60,8 +60,16 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const userRole = access.userMeetingRole || 'buyer';
   const isWinningBuyer = access.isWinningBuyer;
   const isSeller = access.isSeller;
-  const winnerName = access.winner?.bidder || 'Winning Collector';
+  const winnerName = access.winner?.bidder || access.winner?.userName || access.winner?.user || 'Winning Collector';
   const sellerName = auction?.seller || auction?.maker || 'Artisan Workshop';
+  const currentDisplayName =
+    (currentUser?.name && currentUser.name !== 'Complete your profile' && currentUser.name !== 'undefined' && currentUser.name !== 'null'
+      ? currentUser.name
+      : null) ||
+    currentUser?.username ||
+    currentUser?.displayName ||
+    (userRole === 'seller' ? sellerName : winnerName) ||
+    'Participant';
 
   // ── State ──────────────────────────────────────────────────────────────────
   // States: 'INIT' | 'WAITING' | 'CONNECTING' | 'CONNECTED' | 'ENDED' | 'ERROR'
@@ -341,7 +349,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
         signalingRef.current?.send('ROOM_JOINED', {
           userId: currentUser.id,
           role: userRole,
-          name: currentUser.name
+          name: currentDisplayName
         });
       }
     };
@@ -365,7 +373,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           signaling.send('ROOM_PRESENCE_ACK', {
             userId: _currentUser.id,
             role: _userRole,
-            name: _currentUser.name
+            name: currentDisplayName
           });
 
           // Deterministic initiator: Buyer creates the SDP offer
@@ -566,7 +574,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     const msg = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       senderId: currentUser.id,
-      senderName: currentUser.name,
+      senderName: currentDisplayName,
       senderRole: userRole,
       text,
       timestamp: Date.now()
@@ -978,7 +986,11 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
                             color: isOwn ? 'var(--accent-burgundy)' : '#AAA'
                           }}
                         >
-                          {isOwn ? 'You' : msg.senderName}
+                          {isOwn
+                            ? 'You'
+                            : (msg.senderName && msg.senderName !== 'undefined' && msg.senderName !== 'null'
+                                ? msg.senderName
+                                : (msg.senderRole === 'seller' ? sellerName : winnerName) || 'Participant')}
                         </span>
                         <span
                           style={{

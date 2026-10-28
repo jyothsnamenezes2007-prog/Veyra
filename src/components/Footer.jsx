@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Check } from 'lucide-react';
+import { ArrowRight, Check, ShieldCheck, HelpCircle } from 'lucide-react';
+import { HelpAndLegalModal } from './HelpAndLegalModal';
 
 export const Footer = () => {
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
   const [error, setError] = useState('');
+  const [legalModal, setLegalModal] = useState({ open: false, tab: 'help', topic: 'buying' });
 
   const handleSubscribe = (e) => {
     e.preventDefault();
@@ -67,10 +69,9 @@ export const Footer = () => {
             <p style={{ fontSize: 'var(--text-sm)', lineHeight: 1.7, marginBottom: '20px' }}>
               An editorial marketplace for distinctive objects, ceramics, living art, and live auctions. Connecting discerning collectors with independent makers worldwide.
             </p>
-            <div style={{ display: 'flex', gap: '16px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              <a href="#instagram" onClick={(e) => e.preventDefault()} style={{ textDecoration: 'underline' }}>Instagram</a>
-              <a href="#twitter" onClick={(e) => e.preventDefault()} style={{ textDecoration: 'underline' }}>Twitter / X</a>
-              <a href="#journal" onClick={(e) => e.preventDefault()} style={{ textDecoration: 'underline' }}>Editorial Journal</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              <ShieldCheck size={14} color="var(--accent-burgundy)" />
+              <span>Customer Concierge: <a href="mailto:concierge@veyra.art" style={{ color: 'var(--accent-burgundy)', textDecoration: 'underline' }}>concierge@veyra.art</a></span>
             </div>
           </div>
 
@@ -138,18 +139,35 @@ export const Footer = () => {
                 </Link>
               </li>
               <li>
-                <a href="#about" onClick={(e) => e.preventDefault()} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  About
-                </a>
-              </li>
-              <li>
-                <a href="#help-centre" onClick={(e) => e.preventDefault()} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                <button
+                  type="button"
+                  onClick={() => setLegalModal({ open: true, tab: 'help', topic: 'buying' })}
+                  style={{ background: 'none', border: 'none', padding: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', cursor: 'pointer', textAlign: 'left' }}
+                >
                   Help Centre
-                </a>
+                </button>
               </li>
               <li>
-                <a href="#contact" onClick={(e) => e.preventDefault()} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  Contact
+                <button
+                  type="button"
+                  onClick={() => setLegalModal({ open: true, tab: 'help', topic: 'authentication' })}
+                  style={{ background: 'none', border: 'none', padding: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  Authenticity & Standards
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setLegalModal({ open: true, tab: 'help', topic: 'shipping' })}
+                  style={{ background: 'none', border: 'none', padding: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', cursor: 'pointer', textAlign: 'left' }}
+                >
+                  Orders & Shipping
+                </button>
+              </li>
+              <li>
+                <a href="mailto:concierge@veyra.art" style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+                  Concierge Support
                 </a>
               </li>
             </ul>
@@ -253,11 +271,30 @@ export const Footer = () => {
             © {new Date().getFullYear()} VEYRA Marketplace. All rights reserved.
           </p>
           <div style={{ display: 'flex', gap: '20px' }}>
-            <a href="#privacy" onClick={(e) => e.preventDefault()}>Privacy Policy</a>
-            <a href="#terms" onClick={(e) => e.preventDefault()}>Terms</a>
+            <button
+              type="button"
+              onClick={() => setLegalModal({ open: true, tab: 'privacy', topic: 'security' })}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Privacy Policy
+            </button>
+            <button
+              type="button"
+              onClick={() => setLegalModal({ open: true, tab: 'terms', topic: 'buying' })}
+              style={{ background: 'none', border: 'none', padding: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Terms & Conditions
+            </button>
           </div>
         </div>
       </div>
+
+      <HelpAndLegalModal
+        isOpen={legalModal.open}
+        initialTab={legalModal.tab}
+        initialTopic={legalModal.topic}
+        onClose={() => setLegalModal((prev) => ({ ...prev, open: false }))}
+      />
     </footer>
   );
 };
