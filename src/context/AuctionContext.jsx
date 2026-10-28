@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { formatINR } from '../data/products';
 import {
   INITIAL_LIVE_AUCTIONS,
   UPCOMING_AUCTIONS,
@@ -176,6 +177,29 @@ export const AuctionProvider = ({ children }) => {
     } catch (e) {}
   }, [comments]);
 
+  // Synchronize auction comments from server
+  const fetchAuctionComments = useCallback(async (auctionId) => {
+    if (!auctionId) return;
+    try {
+      const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/comments`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.comments)) {
+          setComments((prev) => {
+            const currentList = prev[auctionId] || [];
+            const existingIds = new Set(currentList.map((c) => c.id));
+            const newComments = data.comments.filter((c) => !existingIds.has(c.id));
+            if (newComments.length === 0) return prev;
+            return {
+              ...prev,
+              [auctionId]: [...currentList, ...newComments]
+            };
+          });
+        }
+      }
+    } catch (e) {}
+  }, []);
+
   // Synchronize with server backend and fetch initial authoritative state
   const syncWithServer = useCallback(async () => {
     try {
@@ -186,11 +210,28 @@ export const AuctionProvider = ({ children }) => {
           const demos = data.auctions.filter((a) => DEMO_AUCTION_IDS.includes(a.id));
           const customs = data.auctions.filter((a) => !DEMO_AUCTION_IDS.includes(a.id));
 
+          const sanitizeAuction = (auc) => {
+            const starting = Number(auc.startingBid) || 0;
+            const current = typeof auc.currentBid === 'number' && !isNaN(auc.currentBid) ? auc.currentBid : starting;
+            const minInc = typeof auc.minIncrement === 'number' && !isNaN(auc.minIncrement) && auc.minIncrement > 0
+              ? auc.minIncrement
+              : Math.max(500, Math.round((current * 0.05) / 500) * 500);
+            const count = typeof auc.bidCount === 'number' && !isNaN(auc.bidCount) ? auc.bidCount : (auc.bidHistory?.length || 0);
+            return {
+              ...auc,
+              startingBid: starting,
+              currentBid: current,
+              minIncrement: minInc,
+              bidCount: count,
+              bidHistory: Array.isArray(auc.bidHistory) ? auc.bidHistory : []
+            };
+          };
+
           if (demos.length > 0) {
-            setLiveAuctions(demos);
+            setLiveAuctions(demos.map(sanitizeAuction));
           }
           if (customs.length > 0) {
-            setCustomAuctions(customs);
+            setCustomAuctions(customs.map(sanitizeAuction));
           }
         }
       }
@@ -202,6 +243,11 @@ export const AuctionProvider = ({ children }) => {
   useEffect(() => {
     syncWithServer();
   }, [syncWithServer]);
+
+  const remindersRef = useRef(reminders);
+  useEffect(() => {
+    remindersRef.current = reminders;
+  }, [reminders]);
 
   // Real-time server push events via EventSource (SSE)
   useEffect(() => {
@@ -227,7 +273,7 @@ export const AuctionProvider = ({ children }) => {
               );
 
               // Notify if reminder set
-              if (reminders.includes(auction.id)) {
+              if (remindersRef.current.includes(auction.id)) {
                 addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
               }
             } else if (type === 'AUCTION_ENDED') {
@@ -261,10 +307,24 @@ export const AuctionProvider = ({ children }) => {
               });
             } else if (type === 'PROXY_BID_PLACED') {
               const { bid, auctionId } = payload;
-              addToast(`🤖 Automatic Proxy Bid of ₹${Number(bid.amount).toLocaleString('en-IN')} placed for lot #${auctionId.toUpperCase()}.`);
+              addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
             } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
               const { reason, auctionId } = payload;
-              addToast(`⚠️ Proxy Bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
+              addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
+            } else if (type === 'COMMENT_ADDED') {
+              const { auctionId, comment } = payload || {};
+              if (auctionId && comment && comment.id) {
+                setComments((prev) => {
+                  const list = prev[auctionId] || [];
+                  if (list.some((c) => c.id === comment.id)) {
+                    return prev;
+                  }
+                  return {
+                    ...prev,
+                    [auctionId]: [...list, comment]
+                  };
+                });
+              }
             }
           } catch (err) {}
         };
@@ -286,7 +346,7 @@ export const AuctionProvider = ({ children }) => {
       if (es) es.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [reminders, addToast]);
+  }, [addToast]);
 
   // Cross-tab broadcast listener for multi-tab synchronization
   useEffect(() => {
@@ -303,10 +363,19 @@ export const AuctionProvider = ({ children }) => {
             prev.map((auc) => (auc.id === payload.auctionId ? payload.updatedAuction : auc))
           );
         } else if (type === 'COMMENT_ADDED') {
-          setComments((prev) => ({
-            ...prev,
-            [payload.auctionId]: [...(prev[payload.auctionId] || []), payload.comment]
-          }));
+          const { auctionId, comment } = payload || {};
+          if (auctionId && comment && comment.id) {
+            setComments((prev) => {
+              const list = prev[auctionId] || [];
+              if (list.some((c) => c.id === comment.id)) {
+                return prev;
+              }
+              return {
+                ...prev,
+                [auctionId]: [...list, comment]
+              };
+            });
+          }
         } else if (type === 'AUCTION_RESET') {
           if (payload.updatedAuctions) {
             setLiveAuctions(payload.updatedAuctions);
@@ -1128,22 +1197,32 @@ export const AuctionProvider = ({ children }) => {
   );
 
   // Comments
-  const sendAuctionComment = (auctionId, message, userName = 'Collector') => {
+  const sendAuctionComment = async (auctionId, message, userName = 'Collector') => {
     if (!message || !message.trim()) return;
 
+    const trimmedMsg = message.trim();
+    const commentId = 'c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+    const now = Date.now();
+
     const newComment = {
-      id: 'c-' + Date.now(),
+      id: commentId,
       user: userName,
-      message: message.trim(),
+      message: trimmedMsg,
       time: 'Just now',
-      timestamp: Date.now()
+      timestamp: now
     };
 
-    setComments((prev) => ({
-      ...prev,
-      [auctionId]: [...(prev[auctionId] || []), newComment]
-    }));
+    // Optimistically update local state with duplicate ID guard
+    setComments((prev) => {
+      const list = prev[auctionId] || [];
+      if (list.some((c) => c.id === commentId)) return prev;
+      return {
+        ...prev,
+        [auctionId]: [...list, newComment]
+      };
+    });
 
+    // Cross-tab synchronization
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         const bc = new BroadcastChannel('veyra_auction_realtime_sync');
@@ -1153,6 +1232,21 @@ export const AuctionProvider = ({ children }) => {
         });
         bc.close();
       } catch (e) {}
+    }
+
+    // Authoritative backend persistence & SSE broadcast
+    try {
+      await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: commentId,
+          user: userName,
+          message: trimmedMsg
+        })
+      });
+    } catch (e) {
+      // Offline fallback maintained via local state
     }
   };
 
@@ -1234,9 +1328,9 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
-        addToast(`Automatic Proxy Bidding activated. Maximum authorized: ₹${Number(maxBid).toLocaleString('en-IN')}.`);
+        addToast(`Auto-bidding activated. Maximum authorized: ${formatINR(maxBid)}.`);
       } else {
-        addToast(data.error || 'Failed to enable automatic proxy bidding.', 'error');
+        addToast(data.error || 'Failed to enable auto-bidding.', 'error');
       }
       return data;
     } catch (err) {
@@ -1254,7 +1348,7 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
-        addToast('Automatic Proxy Bidding disabled for this lot.');
+        addToast('Auto-bidding disabled for this lot.');
       } else {
         addToast(data.error || 'Failed to disable proxy bidding.', 'error');
       }
@@ -1281,6 +1375,7 @@ export const AuctionProvider = ({ children }) => {
         disableProxyBid,
         comments,
         sendAuctionComment,
+        fetchAuctionComments,
         isRegistered,
         toggleRegistration,
         registrations,
