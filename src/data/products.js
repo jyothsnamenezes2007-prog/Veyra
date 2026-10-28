@@ -591,9 +591,11 @@ export const PRODUCTS = [
 ];
 
 export const formatINR = (amount) => {
+  const numeric = Number(amount);
+  if (isNaN(numeric)) return '₹0';
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0
-  }).format(amount);
+  }).format(numeric);
 };

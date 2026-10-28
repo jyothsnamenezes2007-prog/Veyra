@@ -1085,10 +1085,18 @@
       "scheduledTimestamp": 1792912369956,
       "endTimestamp": 1792915999956,
       "endTime": 1792915999956,
-      "remainingSeconds": 2853,
+      "remainingSeconds": 0,
       "approvalStatus": "approved",
-      "status": "active",
-      "winner": null
+      "status": "ended",
+      "winner": {
+        "bidder": "Lahari R Prabhu",
+        "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+        "amount": 122000,
+        "timestamp": 1792913146590,
+        "time": "Just now"
+      },
+      "winningBid": 122000,
+      "result": "sold"
     },
     {
       "id": "auc-lot-1792830630677",
@@ -1185,11 +1193,17 @@
       "scheduledTimestamp": 1792845000000,
       "endTimestamp": 1792942200000,
       "endTime": 1792942200000,
-      "remainingSeconds": 29053,
+      "remainingSeconds": 0,
       "approvalStatus": "approved",
-      "status": "active",
-      "winner": null,
-      "result": null,
+      "status": "ended",
+      "winner": {
+        "bidder": "Lahari R Prabhu",
+        "bidderId": "3da40529-db8d-46aa-85ca-a9f89f675f03",
+        "amount": 8100,
+        "timestamp": 1792911532260,
+        "time": "Just now"
+      },
+      "result": "sold",
       "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAN0AAABtCAYAAAAlDmRvAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFNSURBVHhe7dOhEcAgAMDA0o04DPsvRn09Uf8yPmOufR4g8/4DcJfpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmIfCQ8Cdf1H3UIAAAAASUVORK5CYII=",
       "images": [
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAN0AAABtCAYAAAAlDmRvAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAFNSURBVHhe7dOhEcAgAMDA0o04DPsvRn09Uf8yPmOufR4g8/4DcJfpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmKmg5jpIGY6iJkOYqaDmOkgZjqImQ5ipoOY6SBmOoiZDmIfCQ8Cdf1H3UIAAAAASUVORK5CYII="
@@ -1200,7 +1214,8 @@
       "condition": "Pristine Museum Restored",
       "provenance": "Certified masterwork from Chandigarh architectural restoration",
       "authenticityCertificate": "Certificate of Provenance & Studio Hallmark",
-      "submittedAt": "2026-10-24T06:36:29.759Z"
+      "submittedAt": "2026-10-24T06:36:29.759Z",
+      "winningBid": 8100
     },
     {
       "name": "Overdue Antique Brass Lamp",
@@ -1214,7 +1229,11 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "pending",
-      "status": "pending"
+      "status": "pending",
+      "currentBid": 12000,
+      "minIncrement": 500,
+      "bidCount": 0,
+      "bidHistory": []
     },
     {
       "id": "auc-lot-1792823141997",
@@ -1564,13 +1583,26 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "scheduled",
+      "status": "active",
       "startTimestamp": 1792995092859,
       "endTimestamp": 1793254292859,
       "endTime": 1793254292859,
-      "remainingSeconds": 81946,
+      "remainingSeconds": 62411,
       "winner": null,
-      "bidHistory": []
+      "bidHistory": [
+        {
+          "id": "pb-1793020412570-c8rc",
+          "bidder": "Geetha",
+          "bidderId": "680b84ae-d8f1-4198-8b52-c0805049aec9",
+          "amount": 145000,
+          "time": "Just now",
+          "timestamp": 1793020412570,
+          "isProxyBid": true
+        }
+      ],
+      "currentBid": 145000,
+      "bidCount": 1,
+      "minIncrement": 7500
     },
     {
       "id": "up-2",
@@ -1589,13 +1621,16 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "scheduled",
+      "status": "active",
       "startTimestamp": 1793167892859,
       "endTimestamp": 1793427092859,
       "endTime": 1793427092859,
-      "remainingSeconds": 254746,
+      "remainingSeconds": 235211,
       "winner": null,
-      "bidHistory": []
+      "bidHistory": [],
+      "currentBid": 52000,
+      "minIncrement": 2500,
+      "bidCount": 0
     },
     {
       "id": "up-3",
@@ -1618,9 +1653,12 @@
       "startTimestamp": 1793340692859,
       "endTimestamp": 1793599892859,
       "endTime": 1793599892859,
-      "remainingSeconds": 427546,
+      "remainingSeconds": 148811,
       "winner": null,
-      "bidHistory": []
+      "bidHistory": [],
+      "currentBid": 78000,
+      "minIncrement": 4000,
+      "bidCount": 0
     },
     {
       "id": "up-4",
@@ -1643,9 +1681,12 @@
       "startTimestamp": 1793513492859,
       "endTimestamp": 1793772692859,
       "endTime": 1793772692859,
-      "remainingSeconds": 600346,
+      "remainingSeconds": 321611,
       "winner": null,
-      "bidHistory": []
+      "bidHistory": [],
+      "currentBid": 120000,
+      "minIncrement": 6000,
+      "bidCount": 0
     }
   ],
   "reminders": [
@@ -1714,6 +1755,71 @@
       "lastBidAmount": 112000,
       "lastBidTime": 1792913125725,
       "aiReasoning": null
+    },
+    {
+      "id": "pb-1793020408656-ugqk",
+      "createdAt": 1793020408656,
+      "updatedAt": 1793020412571,
+      "auctionId": "up-1",
+      "userId": "680b84ae-d8f1-4198-8b52-c0805049aec9",
+      "userName": "Geetha",
+      "maxBid": 146000,
+      "preferredIncrement": 500,
+      "status": "active",
+      "stopReason": null,
+      "lastBidAmount": 145000,
+      "lastBidTime": 1793020412571,
+      "aiReasoning": "The proposed bid of ₹145000 is within the authorized maximum bid limit of ₹146000."
     }
-  ]
+  ],
+  "comments": {
+    "auc-1": [
+      {
+        "id": "c-1",
+        "user": "ArchivalCurator",
+        "message": "Incredible condition on the woven cane seating.",
+        "timestamp": 1793189140077
+      },
+      {
+        "id": "c-2",
+        "user": "Veyra Specialist",
+        "message": "Stenciled inventory marks authenticated against Chandigarh archives.",
+        "timestamp": 1793189380077
+      },
+      {
+        "id": "c-3",
+        "user": "A. Singhania",
+        "message": "Bid entered. Exceptional provenance.",
+        "timestamp": 1793189680077
+      },
+      {
+        "id": "c-1793189972587-ztbl6",
+        "user": "Collector Test",
+        "message": "Checking authenticity against the 1956 Punjab archives.",
+        "timestamp": 1793189972587
+      },
+      {
+        "id": "c-1793190160988-d3htx",
+        "user": "Collector Test",
+        "message": "Checking authenticity against the 1956 Punjab archives.",
+        "timestamp": 1793190160988
+      }
+    ],
+    "auc-lot-1792823789759": [
+      {
+        "id": "c-1793191852540-vwpb4",
+        "user": "Geetha",
+        "message": "hiii",
+        "timestamp": 1793191852544
+      }
+    ],
+    "up-1": [
+      {
+        "id": "c-1793191882164-tnope",
+        "user": "Geetha",
+        "message": "hello",
+        "timestamp": 1793191882166
+      }
+    ]
+  }
 }

@@ -54,6 +54,8 @@ class AuctionScheduler extends EventEmitter {
           auc.status = 'active';
           auc.remainingSeconds = Math.max(0, Math.floor((end - now) / 1000));
           auc.currentBid = auc.currentBid || auc.startingBid;
+          auc.minIncrement = auc.minIncrement || Math.max(500, Math.round(((auc.startingBid || 0) * 0.05) / 500) * 500);
+          auc.bidCount = typeof auc.bidCount === 'number' && !isNaN(auc.bidCount) ? auc.bidCount : (auc.bidHistory?.length || 0);
           changesMade = true;
           console.log(`[Scheduler:Reconcile] Recovered auction "${auc.name}" (${auc.id}) -> transitioned to ACTIVE.`);
           this.emit('event', {
@@ -120,6 +122,8 @@ class AuctionScheduler extends EventEmitter {
           auc.status = 'active';
           auc.remainingSeconds = Math.max(0, Math.floor((end - now) / 1000));
           auc.currentBid = auc.currentBid || auc.startingBid;
+          auc.minIncrement = auc.minIncrement || Math.max(500, Math.round(((auc.startingBid || 0) * 0.05) / 500) * 500);
+          auc.bidCount = typeof auc.bidCount === 'number' && !isNaN(auc.bidCount) ? auc.bidCount : (auc.bidHistory?.length || 0);
           hasChanges = true;
 
           console.log(`[Scheduler] 🔔 Auction "${auc.name}" (${auc.id}) is now LIVE!`);

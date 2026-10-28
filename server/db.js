@@ -27,6 +27,37 @@ export function initDatabase() {
       if (!Array.isArray(dbCache.proxyConfigs)) {
         dbCache.proxyConfigs = [];
       }
+      if (!dbCache.comments || typeof dbCache.comments !== 'object') {
+        dbCache.comments = {};
+      }
+      if (!dbCache.comments['auc-1'] || dbCache.comments['auc-1'].length === 0) {
+        const cNow = Date.now();
+        dbCache.comments['auc-1'] = [
+          { id: 'c-1', user: 'ArchivalCurator', message: 'Incredible condition on the woven cane seating.', timestamp: cNow - 720000 },
+          { id: 'c-2', user: 'Veyra Specialist', message: 'Stenciled inventory marks authenticated against Chandigarh archives.', timestamp: cNow - 480000 },
+          { id: 'c-3', user: 'A. Singhania', message: 'Bid entered. Exceptional provenance.', timestamp: cNow - 180000 }
+        ];
+      }
+      if (Array.isArray(dbCache.auctions)) {
+        for (const auc of dbCache.auctions) {
+          if (typeof auc.startingBid !== 'number' || isNaN(auc.startingBid)) {
+            auc.startingBid = Number(auc.startingBid) || 0;
+          }
+          if (typeof auc.currentBid !== 'number' || isNaN(auc.currentBid)) {
+            auc.currentBid = auc.startingBid;
+          }
+          if (typeof auc.minIncrement !== 'number' || isNaN(auc.minIncrement) || auc.minIncrement <= 0) {
+            auc.minIncrement = Math.max(500, Math.round(((auc.startingBid || 0) * 0.05) / 500) * 500);
+          }
+          if (typeof auc.bidCount !== 'number' || isNaN(auc.bidCount)) {
+            auc.bidCount = Array.isArray(auc.bidHistory) ? auc.bidHistory.length : 0;
+          }
+          if (!Array.isArray(auc.bidHistory)) {
+            auc.bidHistory = [];
+          }
+        }
+      }
+      persistDatabaseSync();
       console.log(`[Veyra DB] Loaded database with ${dbCache.auctions?.length || 0} auctions, ${dbCache.products?.length || 0} products.`);
       return dbCache;
     } catch (err) {
@@ -77,6 +108,9 @@ export function initDatabase() {
         endTimestamp: end,
         endTime: end,
         remainingSeconds: Math.max(0, Math.floor((start - now) / 1000)),
+        currentBid: u.currentBid || u.startingBid,
+        minIncrement: u.minIncrement || Math.max(500, Math.round(((u.startingBid || 0) * 0.05) / 500) * 500),
+        bidCount: u.bidCount || 0,
         winner: null,
         bidHistory: []
       };
@@ -88,7 +122,14 @@ export function initDatabase() {
     auctions: seededAuctions,
     reminders: ['up-2'],
     registrations: ['up-1'],
-    proxyConfigs: []
+    proxyConfigs: [],
+    comments: {
+      'auc-1': [
+        { id: 'c-1', user: 'ArchivalCurator', message: 'Incredible condition on the woven cane seating.', timestamp: now - 720000 },
+        { id: 'c-2', user: 'Veyra Specialist', message: 'Stenciled inventory marks authenticated against Chandigarh archives.', timestamp: now - 480000 },
+        { id: 'c-3', user: 'A. Singhania', message: 'Bid entered. Exceptional provenance.', timestamp: now - 180000 }
+      ]
+    }
   };
 
   persistDatabaseSync();
@@ -244,4 +285,25 @@ export function updateProxyConfig(id, updates) {
   };
   saveDatabase();
   return db.proxyConfigs[idx];
+}
+
+// Comment operations
+export function getCommentsByAuction(auctionId) {
+  if (!dbCache) initDatabase();
+  return (dbCache.comments && dbCache.comments[auctionId]) || [];
+}
+
+export function insertComment(auctionId, comment) {
+  if (!dbCache) initDatabase();
+  if (!dbCache.comments) dbCache.comments = {};
+  if (!Array.isArray(dbCache.comments[auctionId])) {
+    dbCache.comments[auctionId] = [];
+  }
+  const existing = dbCache.comments[auctionId].find((c) => c.id === comment.id);
+  if (existing) {
+    return existing;
+  }
+  dbCache.comments[auctionId].push(comment);
+  persistDatabaseSync();
+  return comment;
 }

@@ -18,9 +18,22 @@ export const ProxyBiddingControls = ({ auction }) => {
   const [geminiStatus, setGeminiStatus] = useState(null);
 
   // Form inputs
-  const minIncrement = auction?.minIncrement || 500;
+  const currentBid = typeof auction?.currentBid === 'number' && !isNaN(auction.currentBid)
+    ? auction.currentBid
+    : (typeof auction?.startingBid === 'number' && !isNaN(auction.startingBid)
+        ? auction.startingBid
+        : (Number(auction?.startingBid) || 0));
+
+  const minIncrement = typeof auction?.minIncrement === 'number' && !isNaN(auction.minIncrement) && auction.minIncrement > 0
+    ? auction.minIncrement
+    : Math.max(500, Math.round(((currentBid || Number(auction?.startingBid) || 0) * 0.05) / 500) * 500);
+
+  const bidCount = typeof auction?.bidCount === 'number' && !isNaN(auction.bidCount)
+    ? auction.bidCount
+    : (Array.isArray(auction?.bidHistory) ? auction.bidHistory.length : 0);
+
   const minRequiredBid = auction
-    ? (auction.bidCount > 0 ? auction.currentBid + minIncrement : auction.startingBid)
+    ? (bidCount > 0 ? currentBid + minIncrement : currentBid)
     : 0;
 
   const [maxBidInput, setMaxBidInput] = useState('');
@@ -64,7 +77,7 @@ export const ProxyBiddingControls = ({ auction }) => {
       setMaxBidInput(String(config.maxBid));
       setIncrementInput(String(config.preferredIncrement || minIncrement));
     } else {
-      setMaxBidInput(String(Math.max(minRequiredBid, (auction?.currentBid || 0) + minIncrement * 2)));
+      setMaxBidInput(String(Math.max(minRequiredBid, currentBid + minIncrement * 2)));
       setIncrementInput(String(minIncrement));
     }
     setIsModalOpen(true);
@@ -129,7 +142,7 @@ export const ProxyBiddingControls = ({ auction }) => {
         if (res.geminiStatus) setGeminiStatus(res.geminiStatus);
         setIsModalOpen(false);
       } else {
-        setFormError(res.error || 'Failed to activate automatic proxy bidding.');
+        setFormError(res.error || 'Failed to activate auto-bidding.');
       }
     } catch (err) {
       setFormError(err.message || 'An unexpected error occurred.');
@@ -164,8 +177,8 @@ export const ProxyBiddingControls = ({ auction }) => {
 
   // Calculate next valid bid and remaining authorized budget
   const effectiveIncrement = Math.max(minIncrement, Number(config?.preferredIncrement) || minIncrement);
-  const nextCalculableBid = auction.bidCount > 0 ? auction.currentBid + effectiveIncrement : auction.startingBid;
-  const remainingBudget = config?.maxBid ? Math.max(0, config.maxBid - auction.currentBid) : 0;
+  const nextCalculableBid = bidCount > 0 ? currentBid + effectiveIncrement : currentBid;
+  const remainingBudget = config?.maxBid ? Math.max(0, Number(config.maxBid) - currentBid) : 0;
 
   // Seller guard: Sellers cannot proxy bid on their own lot
   if (isSeller) {
@@ -191,7 +204,7 @@ export const ProxyBiddingControls = ({ auction }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Bot size={18} color="var(--accent-burgundy)" />
               <strong style={{ fontSize: '13px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-primary)' }}>
-                Automatic Proxy Bidding
+                Auto-bidding
               </strong>
             </div>
 
@@ -315,12 +328,7 @@ export const ProxyBiddingControls = ({ auction }) => {
             </div>
           )}
 
-          {/* AI Reasoning / Gemini Status info */}
-          {geminiStatus && (
-            <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '0 0 10px' }}>
-              Decision Engine: <span style={{ fontWeight: 500 }}>{geminiStatus.message}</span>
-            </p>
-          )}
+
 
           {/* Controls: Update Limit & Disable / Re-enable */}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -384,7 +392,7 @@ export const ProxyBiddingControls = ({ auction }) => {
           id="enable-proxy-bidding-btn"
         >
           <Bot size={16} />
-          <span>Enable Automatic Proxy Bidding</span>
+          <span>Enable Auto-bidding</span>
         </button>
       )}
 
@@ -433,7 +441,7 @@ export const ProxyBiddingControls = ({ auction }) => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Bot size={20} color="var(--accent-burgundy)" />
                 <h3 id="proxy-modal-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-                  Automatic Proxy Bidding
+                  Auto-bidding
                 </h3>
               </div>
               <button
@@ -465,7 +473,7 @@ export const ProxyBiddingControls = ({ auction }) => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Current Highest Bid:</span>
-                  <strong>{formatINR(auction.currentBid)}</strong>
+                  <strong>{formatINR(currentBid)}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Minimum Next Bid:</span>
@@ -601,7 +609,7 @@ export const ProxyBiddingControls = ({ auction }) => {
                     ? 'Activating...'
                     : config?.status === 'active'
                     ? 'Update Settings'
-                    : 'Enable Automatic Proxy Bidding'}
+                    : 'Enable Auto-bidding'}
                 </button>
               </div>
             </form>

@@ -11,7 +11,9 @@ import {
   getProxyConfigs,
   getProxyConfigByUser,
   upsertProxyConfig,
-  updateProxyConfig
+  updateProxyConfig,
+  getCommentsByAuction,
+  insertComment
 } from './db.js';
 import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
@@ -756,6 +758,48 @@ export async function handleApiRequest(req, res) {
         return true;
       }
     });
+  }
+
+  // 9e. GET /api/auctions/:id/comments
+  const commentsGetMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/comments$/);
+  if (commentsGetMatch && method === 'GET') {
+    const id = commentsGetMatch[1];
+    const comments = getCommentsByAuction(id);
+    sendJson(res, 200, { success: true, comments, serverTime: Date.now() });
+    return true;
+  }
+
+  // 9f. POST /api/auctions/:id/comments
+  const commentsPostMatch = pathname.match(/^\/api\/auctions\/([a-zA-Z0-9_-]+)\/comments$/);
+  if (commentsPostMatch && method === 'POST') {
+    const id = commentsPostMatch[1];
+    try {
+      const data = await parseJsonBody(req);
+      const message = (data.message || '').trim();
+      if (!message) {
+        sendJson(res, 400, { success: false, error: 'Comment message is required.' });
+        return true;
+      }
+      const user = (data.user || data.userName || 'Collector').trim();
+      const commentId = data.id || ('c-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+      const now = Date.now();
+      const newComment = {
+        id: commentId,
+        user,
+        message,
+        timestamp: now
+      };
+      insertComment(id, newComment);
+      broadcastSSE('COMMENT_ADDED', {
+        auctionId: id,
+        comment: newComment
+      });
+      sendJson(res, 201, { success: true, comment: newComment });
+      return true;
+    } catch (err) {
+      sendJson(res, 500, { success: false, error: err.message });
+      return true;
+    }
   }
 
   // 10. GET /api/products

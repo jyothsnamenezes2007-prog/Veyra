@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -30,11 +30,31 @@ import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
 import { ProxyBiddingControls } from '../components/ProxyBiddingControls';
 
+const formatCommentTimestamp = (msg) => {
+  if (!msg) return 'Just now';
+  const ts = msg.timestamp || msg.createdAt;
+  if (!ts) return msg.time || 'Just now';
+  const timeNum = typeof ts === 'number' ? ts : new Date(ts).getTime();
+  if (isNaN(timeNum) || timeNum <= 0) return msg.time || 'Just now';
+
+  const diffMs = Date.now() - timeNum;
+  if (diffMs < 0) return 'Just now';
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(timeNum).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+};
+
 export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const { liveAuctions, placeBid, comments, sendAuctionComment, getLeaderboard } = useAuctions();
+  const { liveAuctions, placeBid, comments, sendAuctionComment, fetchAuctionComments, getLeaderboard } = useAuctions();
   const { products } = useProducts();
   const { user } = useAuth();
   const { isInWishlist, toggleWishlist } = useWishlist();
@@ -47,7 +67,24 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   // Find authoritative auction
   const auction = liveAuctions.find((a) => a.id === id || a.productId === id) || liveAuctions[0];
 
-  const minRequiredBid = auction ? auction.currentBid + auction.minIncrement : 0;
+  const currentBid = typeof auction?.currentBid === 'number' && !isNaN(auction.currentBid)
+    ? auction.currentBid
+    : (typeof auction?.startingBid === 'number' && !isNaN(auction.startingBid)
+        ? auction.startingBid
+        : (Number(auction?.startingBid) || 0));
+
+  const minIncrement = typeof auction?.minIncrement === 'number' && !isNaN(auction.minIncrement) && auction.minIncrement > 0
+    ? auction.minIncrement
+    : Math.max(500, Math.round(((currentBid || Number(auction?.startingBid) || 0) * 0.05) / 500) * 500);
+
+  const bidCount = typeof auction?.bidCount === 'number' && !isNaN(auction.bidCount)
+    ? auction.bidCount
+    : (Array.isArray(auction?.bidHistory) ? auction.bidHistory.length : 0);
+
+  const minRequiredBid = auction
+    ? (bidCount > 0 ? currentBid + minIncrement : currentBid)
+    : 0;
+
   const [customBid, setCustomBid] = useState('');
   const [bidError, setBidError] = useState('');
   const [chatMessage, setChatMessage] = useState('');
@@ -56,10 +93,17 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
 
   // Sync custom bid when minRequired changes
   useEffect(() => {
-    if (minRequiredBid) {
+    if (minRequiredBid && !isNaN(minRequiredBid)) {
       setCustomBid(String(minRequiredBid));
     }
   }, [minRequiredBid]);
+
+  // Synchronize floor comments from authoritative backend
+  useEffect(() => {
+    if (auction?.id && fetchAuctionComments) {
+      fetchAuctionComments(auction.id);
+    }
+  }, [auction?.id, fetchAuctionComments]);
 
   if (!auction) {
     return (
@@ -137,7 +181,16 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
     }
   };
 
-  const lotComments = comments[auction.id] || [];
+  const rawLotComments = (auction && comments[auction.id]) || [];
+  const lotComments = useMemo(() => {
+    const seen = new Set();
+    return rawLotComments.filter((msg) => {
+      if (!msg || !msg.id) return false;
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  }, [rawLotComments]);
 
   // Ranked Leaderboard
   const leaderboard = getLeaderboard(auction.id);
@@ -172,13 +225,14 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
     if (!res.success) {
       setBidError(res.error || 'Bid rejected by authoritative server.');
     } else {
-      setCustomBid(String(amountNum + auction.minIncrement));
+      setCustomBid(String(amountNum + minIncrement));
     }
   };
 
   // Quick preset bid buttons
   const handleQuickBid = (incrementValue) => {
-    const calculated = auction.currentBid + incrementValue;
+    const inc = Number(incrementValue) || minIncrement;
+    const calculated = currentBid + inc;
     setCustomBid(String(calculated));
   };
 
@@ -479,7 +533,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
                         <strong style={{ color: 'var(--text-primary)' }}>{msg.user}</strong>
-                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{msg.time}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>{formatCommentTimestamp(msg)}</span>
                       </div>
                       <p style={{ margin: 0, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                         {msg.message}
@@ -679,7 +733,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Current Highest Bid
                   </span>
                   <strong style={{ fontSize: '1.45rem', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatINR(auction.currentBid)}
+                    {formatINR(currentBid)}
                   </strong>
                 </div>
 
@@ -697,7 +751,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Total Bids Accepted
                   </span>
                   <strong style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>
-                    {auction.bidCount} Bids
+                    {bidCount} Bids
                   </strong>
                 </div>
 
@@ -706,7 +760,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Min Increment
                   </span>
                   <strong style={{ fontSize: '1.25rem', color: 'var(--text-secondary)' }}>
-                    +{formatINR(auction.minIncrement)}
+                    +{formatINR(minIncrement)}
                   </strong>
                 </div>
               </div>
@@ -723,27 +777,27 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <button
                         type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement)}
+                        onClick={() => handleQuickBid(minIncrement)}
                         className="btn btn-secondary btn-sm"
                         style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
                       >
-                        +{formatINR(auction.minIncrement)}
+                        +{formatINR(minIncrement)}
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement * 2)}
+                        onClick={() => handleQuickBid(minIncrement * 2)}
                         className="btn btn-secondary btn-sm"
                         style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
                       >
-                        +{formatINR(auction.minIncrement * 2)}
+                        +{formatINR(minIncrement * 2)}
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleQuickBid(auction.minIncrement * 4)}
+                        onClick={() => handleQuickBid(minIncrement * 4)}
                         className="btn btn-secondary btn-sm"
                         style={{ flex: 1, minWidth: '100px', fontWeight: 600 }}
                       >
-                        +{formatINR(auction.minIncrement * 4)}
+                        +{formatINR(minIncrement * 4)}
                       </button>
                     </div>
                   </div>
@@ -760,11 +814,11 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                         </span>
                         <input
                           type="number"
-                          step={auction.minIncrement}
+                          step={minIncrement}
                           min={minRequiredBid}
                           value={customBid}
                           onChange={(e) => setCustomBid(e.target.value)}
-                          placeholder={`Enter at least ${minRequiredBid}`}
+                          placeholder={`Enter at least ${formatINR(minRequiredBid)}`}
                           style={{
                             width: '100%',
                             height: '44px',
@@ -808,7 +862,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Bids are legally binding and synchronized across all Veyra trading terminals.
                   </p>
                 </form>
-                {/* Automatic Proxy Bidding Engine Controls */}
+                {/* Auto-bidding Engine Controls */}
                 <ProxyBiddingControls auction={auction} />
                 </>
               ) : isUpcoming ? (
@@ -833,7 +887,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     Terminal bidding controls will activate automatically as soon as the floor countdown concludes.
                   </p>
                 </div>
-                {/* Automatic Proxy Bidding Engine Controls */}
+                {/* Auto-bidding Engine Controls */}
                 <ProxyBiddingControls auction={auction} />
                 </>
               ) : (
@@ -850,7 +904,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                   <Trophy size={32} color="var(--accent-burgundy)" style={{ margin: '0 auto 10px' }} />
                   <h3 style={{ fontSize: '1.4rem', marginBottom: '6px' }}>Auction Successfully Concluded</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px' }}>
-                    Winning Bidder: <strong style={{ color: 'var(--text-primary)' }}>{winner?.bidder || 'Authoritative Bidder'}</strong> with final hammer price of <strong>{formatINR(auction.currentBid)}</strong>.
+                    Winning Bidder: <strong style={{ color: 'var(--text-primary)' }}>{winner?.bidder || 'Authoritative Bidder'}</strong> with final hammer price of <strong>{formatINR(currentBid)}</strong>.
                   </p>
 
                   {/* Private Meeting Action Button: Clearly visible "Enter Meeting" (or "Meet Winner" for Seller) */}
@@ -914,7 +968,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                   Leading Accepted Amount
                 </span>
                 <span style={{ fontSize: '1.85rem', fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                  {formatINR(auction.currentBid)}
+                  {formatINR(currentBid)}
                 </span>
               </div>
 
