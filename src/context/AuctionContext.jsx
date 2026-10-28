@@ -607,6 +607,9 @@ export const AuctionProvider = ({ children }) => {
             addToast(`"${data.auction.name}" submitted successfully for curator approval.`);
             return { success: true, auction: data.auction };
           }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          return { success: false, error: errData.error || 'Failed to submit auction lot.' };
         }
       } catch (e) {
         // Fallback to local store if server offline

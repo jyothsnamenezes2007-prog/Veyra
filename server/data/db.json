@@ -1,6 +1,31 @@
 {
   "products": [
     {
+      "id": "prod-custom-1793205794399",
+      "type": "shop",
+      "isAuction": false,
+      "name": "Archival Verified Artisan Table",
+      "seller": "Studio Jeanneret",
+      "sellerId": "artisan-1",
+      "location": "Studio Atelier",
+      "category": "Handmade",
+      "price": 48000,
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "images": [
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      ],
+      "description": "Handcrafted teak table with authentic joinery.",
+      "materials": "",
+      "dimensions": "",
+      "condition": "Studio Mint Original",
+      "availability": "In Stock • Studio Direct",
+      "rating": 5,
+      "featured": false,
+      "inStock": true,
+      "listingStatus": "active",
+      "listedAt": "2026-10-28T16:43:14.399Z"
+    },
+    {
       "id": "prod-custom-1793197226668",
       "type": "shop",
       "isAuction": false,

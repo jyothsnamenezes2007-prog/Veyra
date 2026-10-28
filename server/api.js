@@ -19,6 +19,11 @@ import {
 import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
 import { verifyGeminiModel } from './gemini.js';
+import {
+  verifyProductImage,
+  isImageAuthorized,
+  invalidateImageVerification
+} from './imageVerification.js';
 
 // Connected SSE clients
 const sseClients = new Set();
@@ -131,6 +136,42 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
+  // 2b. POST /api/verify-image (Verify uploaded product image via local Qwen3-VL-8B-Instruct)
+  if (pathname === '/api/verify-image' && method === 'POST') {
+    try {
+      const data = await parseJsonBody(req);
+      if (!data.image) {
+        sendJson(res, 400, {
+          success: false,
+          verified: false,
+          error: 'No image provided for verification.'
+        });
+        return true;
+      }
+
+      const result = await verifyProductImage(data.image);
+      const statusCode = result.success ? 200 : (result.unavailable ? 503 : 400);
+      sendJson(res, statusCode, result);
+      return true;
+    } catch (err) {
+      if (err.message && err.message.includes('too large')) {
+        sendJson(res, 400, {
+          success: false,
+          verified: false,
+          error: 'Image exceeds the maximum allowed size of 5MB.'
+        });
+        return true;
+      }
+      sendJson(res, 500, {
+        success: false,
+        verified: false,
+        unavailable: true,
+        error: 'Verification is temporarily unavailable. Please try again.'
+      });
+      return true;
+    }
+  }
+
   // 3. GET /api/auctions
   if (pathname === '/api/auctions' && method === 'GET') {
     const auctions = getAuctions();
@@ -229,6 +270,18 @@ export async function handleApiRequest(req, res) {
 
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
+
+      // Authoritative image verification check: If an image is provided, it must be verified
+      if (primaryImage) {
+        const authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        if (!authorized) {
+          sendJson(res, 400, {
+            success: false,
+            error: 'Product image verification required. The uploaded image must pass verification before listing submission.'
+          });
+          return true;
+        }
+      }
 
       const lotId = data.id || ('auc-lot-' + Date.now());
       const prodId = data.productId || ('prod-' + Date.now());
@@ -833,6 +886,18 @@ export async function handleApiRequest(req, res) {
 
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
+
+      // Authoritative image verification check: If an image is provided, it must be verified
+      if (primaryImage) {
+        const authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        if (!authorized) {
+          sendJson(res, 400, {
+            success: false,
+            error: 'Product image verification required. The uploaded image must pass verification before listing submission.'
+          });
+          return true;
+        }
+      }
 
       const newProduct = {
         id: data.id || ('prod-custom-' + Date.now()),
