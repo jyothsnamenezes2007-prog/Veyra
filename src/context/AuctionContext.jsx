@@ -115,7 +115,7 @@ export const AuctionProvider = ({ children }) => {
           amount: 96000,
           time: '1 hour ago',
           timestamp: Date.now() - 3600000,
-          status: 'Leading',
+          status: 'Ongoing',
           image: 'https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=400&q=80'
         }
       ];
@@ -847,7 +847,7 @@ export const AuctionProvider = ({ children }) => {
             amount: numAmount,
             time: 'Just now',
             timestamp: Date.now(),
-            status: 'Leading',
+            status: 'Ongoing',
             image: updated.image || ''
           },
           ...prev.filter((b) => b.auctionId !== auctionId)
@@ -1004,7 +1004,7 @@ export const AuctionProvider = ({ children }) => {
             amount: numAmount,
             time: 'Just now',
             timestamp: Date.now(),
-            status: 'Leading',
+            status: 'Ongoing',
             image: outcome.updatedAuction?.image || ''
           },
           ...prev.filter((b) => b.auctionId !== auctionId)

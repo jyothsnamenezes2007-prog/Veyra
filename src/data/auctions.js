@@ -285,9 +285,11 @@ export const getAuthoritativeAuctionWinner = (auction) => {
   });
 
   const top = sorted[0];
+  const rawBidder = top.bidder || top.bidderName || top.user || top.userName || '';
+  const resolvedBidder = rawBidder && rawBidder !== 'undefined' && rawBidder !== 'null' ? rawBidder : 'Winning Collector';
   return {
-    bidder: top.bidder,
-    bidderId: top.bidderId || null,
+    bidder: resolvedBidder,
+    bidderId: top.bidderId || top.userId || null,
     amount: top.amount,
     timestamp: top.timestamp || null,
     time: top.time || 'Hammer Winner'

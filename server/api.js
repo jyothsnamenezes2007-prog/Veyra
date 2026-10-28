@@ -7,6 +7,7 @@ import {
   getProductById,
   insertProduct,
   updateProduct,
+  deleteProduct,
   saveDatabase,
   getProxyConfigs,
   getProxyConfigByUser,
@@ -430,7 +431,8 @@ export async function handleApiRequest(req, res) {
 
         const data = await parseJsonBody(req);
         const amount = Number(data.amount);
-        const bidderName = data.bidderName || data.bidder || 'Collector';
+        const rawBidder = (data.bidderName || data.bidder || data.userName || data.user || '').trim();
+        const bidderName = rawBidder && rawBidder !== 'undefined' && rawBidder !== 'null' && rawBidder !== 'Complete your profile' ? rawBidder : (data.username || 'Collector');
         const userId = data.userId || 'user-' + Date.now();
         const now = Date.now();
 
@@ -896,6 +898,53 @@ export async function handleApiRequest(req, res) {
     const updated = updateProduct(id, { listingStatus: 'rejected' });
     broadcastSSE('PRODUCT_REJECTED', { product: updated });
     sendJson(res, 200, { success: true, product: updated });
+    return true;
+  }
+
+  // 14. DELETE /api/products/:id or POST /api/products/:id/delete
+  const prodDeleteMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)(?:\/delete)?$/);
+  if (prodDeleteMatch && (method === 'DELETE' || (method === 'POST' && pathname.endsWith('/delete')))) {
+    const id = prodDeleteMatch[1];
+    const product = getProductById(id);
+    if (!product) {
+      sendJson(res, 404, { success: false, error: 'Product not found.' });
+      return true;
+    }
+
+    let bodyData = {};
+    try {
+      bodyData = await parseJsonBody(req);
+    } catch (e) {}
+
+    const userId = bodyData.userId || url.searchParams.get('userId') || req.headers['x-user-id'];
+    const userName = bodyData.userName || bodyData.user || url.searchParams.get('userName');
+
+    // Ownership verification
+    const isOwner = Boolean(
+      (userId && product.sellerId && String(product.sellerId) === String(userId)) ||
+      (userName && product.seller && product.seller.toLowerCase().trim() === userName.toLowerCase().trim()) ||
+      (!product.sellerId && !userId)
+    );
+
+    if (!isOwner) {
+      sendJson(res, 403, { success: false, error: 'Unauthorized: You can only delete your own products.' });
+      return true;
+    }
+
+    // Safety check: Cannot delete if associated with an active ongoing auction
+    const auctions = getAuctions();
+    const activeAuction = auctions.find(
+      (a) => (a.productId === id || a.id === id || a.id === product.auctionId) && (a.status === 'active' || a.status === 'live')
+    );
+    if (activeAuction) {
+      sendJson(res, 400, { success: false, error: 'Cannot delete product while associated with an active live auction.' });
+      return true;
+    }
+
+    // Perform safe deletion (historical auctions, bids, and orders remain intact)
+    const removed = deleteProduct(id);
+    broadcastSSE('PRODUCT_DELETED', { productId: id });
+    sendJson(res, 200, { success: true, message: 'Product successfully deleted.', productId: id, removed });
     return true;
   }
 

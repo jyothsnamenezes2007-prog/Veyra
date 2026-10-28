@@ -21,7 +21,9 @@ import {
   AlertCircle,
   X,
   Video,
-  Trophy
+  Trophy,
+  Bell,
+  CheckCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
@@ -60,7 +62,11 @@ export const Account = () => {
   // Sync tab with URL
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab) setActiveTab(tab);
+    if (tab === 'messages') {
+      setActiveTab('notifications');
+    } else if (tab) {
+      setActiveTab(tab);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -98,6 +104,136 @@ export const Account = () => {
       return access.canAccessMeeting && access.buttonLabel === 'Meet Winner';
     });
   }, [liveAuctions, user]);
+
+  // Read notification state persisted per user
+  const notifStorageKey = user ? `veyra_notifs_read_${user.id}` : null;
+  const [readNotifIds, setReadNotifIds] = useState(() => {
+    if (!user) return [];
+    try {
+      const saved = localStorage.getItem(`veyra_notifs_read_${user.id}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const markNotifRead = (id) => {
+    setReadNotifIds((prev) => {
+      if (prev.includes(id)) return prev;
+      const next = [...prev, id];
+      if (notifStorageKey) {
+        try { localStorage.setItem(notifStorageKey, JSON.stringify(next)); } catch {}
+      }
+      return next;
+    });
+  };
+
+  const markAllNotifsRead = () => {
+    const allIds = userNotifications.map((n) => n.id);
+    setReadNotifIds(allIds);
+    if (notifStorageKey) {
+      try { localStorage.setItem(notifStorageKey, JSON.stringify(allIds)); } catch {}
+    }
+  };
+
+  // Derive authoritative real notifications from user's bids, auctions, sales, and won items
+  const userNotifications = useMemo(() => {
+    if (!user) return [];
+    const notifs = [];
+
+    // 1. Won auctions
+    wonAuctions.forEach((won) => {
+      notifs.push({
+        id: `notif-won-${won.id}`,
+        type: 'won',
+        title: 'Auction Won',
+        actorName: won.seller || won.maker || 'Artisan Workshop',
+        message: `Congratulations! Your bid has won the auction for "${won.name}". Connect for your private consultation with the maker.`,
+        amount: won.currentBid,
+        timestamp: won.endTimestamp || Date.now() - 3600000,
+        auctionId: won.id,
+        link: `/live/${won.id}`
+      });
+    });
+
+    // 2. Completed sales where user is seller
+    sellerCompletedAuctions.forEach((soldAuc) => {
+      const winnerName = soldAuc.winner?.bidder || 'Winning Collector';
+      notifs.push({
+        id: `notif-sold-${soldAuc.id}`,
+        type: 'sold',
+        title: 'Lot Sold at Auction',
+        actorName: winnerName,
+        message: `Your curated lot "${soldAuc.name}" concluded with winning hammer ${formatINR(soldAuc.currentBid)}. Winner: ${winnerName}.`,
+        amount: soldAuc.currentBid,
+        timestamp: soldAuc.endTimestamp || Date.now() - 3600000,
+        auctionId: soldAuc.id,
+        link: `/live/${soldAuc.id}`
+      });
+    });
+
+    // 3. User Bids (Accepted bid and Outbid alerts)
+    userBids.forEach((bid) => {
+      const matched = liveAuctions.find((a) => a.id === bid.auctionId || a.productId === bid.auctionId);
+      const isWon = wonAuctions.some((w) => w.id === bid.auctionId);
+
+      // Bid accepted event
+      notifs.push({
+        id: `notif-bid-accept-${bid.id}`,
+        type: 'bid_accepted',
+        title: 'Bid Accepted on Ledger',
+        actorName: user.name && user.name !== 'Complete your profile' ? user.name : (user.username || 'You'),
+        message: `Your bid of ${formatINR(bid.amount)} on "${bid.auctionTitle}" was verified and placed on the live auction floor.`,
+        amount: bid.amount,
+        timestamp: bid.timestamp || Date.now() - 7200000,
+        auctionId: bid.auctionId,
+        link: `/live/${bid.auctionId}`
+      });
+
+      // Outbid event
+      if (matched && !isWon) {
+        const topBidder = matched.bidHistory?.[0]?.bidder || matched.leadingBidder;
+        const currentAmount = matched.currentBid || matched.startingBid;
+        if (currentAmount > bid.amount) {
+          const actor = topBidder && topBidder !== 'undefined' && topBidder !== 'null' ? topBidder : 'Competing Collector';
+          notifs.push({
+            id: `notif-outbid-${bid.auctionId}-${currentAmount}`,
+            type: 'outbid',
+            title: 'Outbid Notification',
+            actorName: actor,
+            message: `${actor} placed a higher bid of ${formatINR(currentAmount)} on "${bid.auctionTitle}". Increase your bid to lead.`,
+            amount: currentAmount,
+            timestamp: matched.bidHistory?.[0]?.timestamp || (bid.timestamp ? bid.timestamp + 120000 : Date.now() - 1800000),
+            auctionId: bid.auctionId,
+            link: `/live/${bid.auctionId}`
+          });
+        }
+      }
+    });
+
+    // Sort newest first
+    notifs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    return notifs;
+  }, [user, userBids, liveAuctions, wonAuctions, sellerCompletedAuctions]);
+
+  const unreadCount = useMemo(() => {
+    return userNotifications.filter((n) => !readNotifIds.includes(n.id)).length;
+  }, [userNotifications, readNotifIds]);
+
+  const formatNotifTime = (ts) => {
+    if (!ts) return 'Recently';
+    const diff = Date.now() - Number(ts);
+    if (diff < 0) return 'Just now';
+    const s = Math.floor(diff / 1000);
+    if (s < 60) return 'Just now';
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
+  };
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
@@ -173,6 +309,7 @@ export const Account = () => {
   // Nav items per Christie's inspired layout (excluding Interests tab)
   const navTabs = [
     { id: 'overview', label: 'Account Overview', icon: User },
+    { id: 'notifications', label: 'Notifications', icon: Bell, count: unreadCount },
     { id: 'orders', label: 'My Orders & History', icon: Package, count: orders.length },
     { id: 'recent', label: 'Recently Viewed', icon: Clock, count: recentlyViewed.length },
     { id: 'watchlist', label: 'Saved Watchlist', icon: Heart, count: wishlistItems.length },
@@ -404,6 +541,161 @@ export const Account = () => {
               minHeight: '480px'
             }}
           >
+            {/* TAB: NOTIFICATIONS */}
+            {activeTab === 'notifications' && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '1.6rem', margin: 0 }}>Collector Notifications</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                      Real-time updates on your placed bids, outbid alerts, won auction lots, and completed sales.
+                    </p>
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={markAllNotifsRead}
+                      className="btn btn-secondary btn-sm"
+                      style={{ gap: '6px', fontSize: '12px', height: '32px' }}
+                    >
+                      <CheckCheck size={14} />
+                      <span>Mark All as Read ({unreadCount})</span>
+                    </button>
+                  )}
+                </div>
+
+                {userNotifications.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '48px 24px',
+                      textAlign: 'center',
+                      backgroundColor: 'var(--bg-primary)',
+                      borderRadius: 'var(--radius-xs)',
+                      border: '1px solid var(--border-color)'
+                    }}
+                  >
+                    <Bell size={36} color="var(--text-secondary)" style={{ opacity: 0.35, marginBottom: '14px' }} />
+                    <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', marginBottom: '6px' }}>No notifications yet</h3>
+                    <p style={{ fontSize: '13px', color: 'var(--text-secondary)', maxWidth: '420px', margin: '0 auto', lineHeight: 1.6 }}>
+                      When you place bids, lead auctions, receive outbid alerts, or win curated lots, your authoritative updates will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {userNotifications.map((notif) => {
+                      const isRead = readNotifIds.includes(notif.id);
+                      return (
+                        <div
+                          key={notif.id}
+                          onClick={() => markNotifRead(notif.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between',
+                            padding: '16px 18px',
+                            backgroundColor: isRead ? '#FFFFFF' : 'rgba(120, 59, 75, 0.04)',
+                            border: `1px solid ${isRead ? 'var(--border-color)' : 'rgba(120, 59, 75, 0.25)'}`,
+                            borderRadius: 'var(--radius-xs)',
+                            gap: '16px',
+                            cursor: 'pointer',
+                            transition: 'all 150ms ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                            <div
+                              style={{
+                                width: '38px',
+                                height: '38px',
+                                borderRadius: '50%',
+                                backgroundColor: notif.type === 'won'
+                                  ? 'rgba(40, 167, 69, 0.12)'
+                                  : notif.type === 'outbid'
+                                  ? 'rgba(158, 58, 58, 0.1)'
+                                  : 'rgba(120, 59, 75, 0.1)',
+                                color: notif.type === 'won'
+                                  ? '#1e7e34'
+                                  : notif.type === 'outbid'
+                                  ? 'var(--error-color)'
+                                  : 'var(--accent-burgundy)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                                marginTop: '2px'
+                              }}
+                            >
+                              {notif.type === 'won' ? (
+                                <Trophy size={18} />
+                              ) : notif.type === 'outbid' ? (
+                                <AlertCircle size={18} />
+                              ) : notif.type === 'sold' ? (
+                                <Store size={18} />
+                              ) : (
+                                <Gavel size={18} />
+                              )}
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {notif.title}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '10.5px',
+                                    padding: '1px 7px',
+                                    borderRadius: '10px',
+                                    fontWeight: 600,
+                                    backgroundColor: isRead ? 'var(--surface-secondary)' : 'rgba(120, 59, 75, 0.1)',
+                                    color: isRead ? 'var(--text-secondary)' : 'var(--accent-burgundy)'
+                                  }}
+                                >
+                                  {notif.actorName}
+                                </span>
+                                {!isRead && (
+                                  <span
+                                    style={{
+                                      width: '7px',
+                                      height: '7px',
+                                      borderRadius: '50%',
+                                      backgroundColor: 'var(--accent-burgundy)'
+                                    }}
+                                    title="Unread"
+                                  />
+                                )}
+                              </div>
+
+                              <p style={{ fontSize: '12.5px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
+                                {notif.message}
+                              </p>
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>
+                                {formatNotifTime(notif.timestamp)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {notif.link && (
+                            <Link
+                              to={notif.link}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markNotifRead(notif.id);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ height: '32px', padding: '0 12px', fontSize: '11.5px', flexShrink: 0 }}
+                            >
+                              <span>View Lot</span>
+                              <ExternalLink size={12} />
+                            </Link>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* TAB 1: OVERVIEW */}
             {activeTab === 'overview' && (
               <div>
@@ -807,7 +1099,7 @@ export const Account = () => {
                 <div style={{ marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
                   <h2 style={{ fontSize: '1.6rem', margin: 0 }}>My Authoritative Bids ({userBids.length})</h2>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-                    Every bid entered on active lots is tracked with real-time leading or outbid status.
+                    Every bid entered on active lots is tracked with real-time ongoing or outbid status.
                   </p>
                 </div>
 
@@ -940,17 +1232,17 @@ export const Account = () => {
                                 borderRadius: 'var(--radius-xs)',
                                 backgroundColor: isWonAndClosed
                                   ? 'rgba(40, 167, 69, 0.12)'
-                                  : b.status === 'Leading'
+                                  : (b.status === 'Leading' || b.status === 'Ongoing')
                                   ? 'var(--badge-shipping-bg)'
                                   : 'rgba(158, 58, 58, 0.1)',
                                 color: isWonAndClosed
                                   ? '#1e7e34'
-                                  : b.status === 'Leading'
+                                  : (b.status === 'Leading' || b.status === 'Ongoing')
                                   ? 'var(--badge-shipping-text)'
                                   : 'var(--error-color)'
                               }}
                             >
-                              {isWonAndClosed ? 'Auction Won' : b.status}
+                              {isWonAndClosed ? 'Auction Won' : (b.status === 'Leading' ? 'Ongoing' : (b.status === 'Ended' ? 'Concluded' : b.status))}
                             </span>
 
                             {isWonAndClosed ? (
