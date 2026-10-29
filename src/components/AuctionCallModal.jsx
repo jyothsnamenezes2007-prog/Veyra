@@ -14,11 +14,36 @@ import {
   Send,
   MessageSquare,
   Loader2,
-  UserCheck
+  UserCheck,
+  CheckCircle2,
+  CreditCard,
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 import { WebRTCSignaling, RTC_CONFIGURATION, stopMediaStream } from '../lib/webrtc';
 import { getMeetingAccess } from '../data/auctions';
 import { useToast } from '../context/ToastContext';
+
+// ─── Razorpay Script Loader ───────────────────────────────────────────────────
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && window.Razorpay) {
+      return resolve(true);
+    }
+    const existing = typeof document !== 'undefined' ? document.querySelector('script[src*="checkout.razorpay.com"]') : null;
+    if (existing) {
+      existing.addEventListener('load', () => resolve(true));
+      existing.addEventListener('error', () => resolve(false));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_MESSAGE_LENGTH = 500;
@@ -83,6 +108,18 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [chatError, setChatError] = useState('');
   const [otherParticipantPresent, setOtherParticipantPresent] = useState(false);
+
+  // ── Payment & Settlement State ──────────────────────────────────────────────
+  const [paymentStatus, setPaymentStatus] = useState(auction?.paymentStatus || 'pending'); // 'pending' | 'verifying' | 'completed' | 'failed'
+  const [paymentDetails, setPaymentDetails] = useState(null);
+  const [paymentError, setPaymentError] = useState('');
+  const [isInitiatingPayment, setIsInitiatingPayment] = useState(false);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
+
+  // Authoritative settlement amount based on winning bid / hammer price
+  const paymentAmount = Math.round(
+    Number(auction?.winningBid || auction?.winner?.amount || auction?.currentBid || auction?.startingBid || 0)
+  );
 
   // ── DOM refs ────────────────────────────────────────────────────────────────
   const remoteVideoRef = useRef(null);
@@ -459,9 +496,28 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             peerConnectionRef.current.close();
             peerConnectionRef.current = null;
           }
+          stopMediaStream(localStreamRef.current);
+          localStreamRef.current = null;
           remoteStreamRef.current = null;
-          setCallState('WAITING');
-          addToastRef.current('The other participant left the consultation room.');
+          if (callStateRef.current === 'CONNECTED') {
+            setCallState('ENDED');
+            addToastRef.current('The other participant ended the consultation.');
+          } else {
+            setCallState('WAITING');
+            addToastRef.current('The other participant left the room.');
+          }
+          break;
+
+        case 'PAYMENT_CONFIRMED':
+          if (data && (!data.auctionId || data.auctionId === auctionIdRef.current)) {
+            setPaymentStatus('completed');
+            setPaymentDetails({
+              paymentId: data.paymentId,
+              amount: data.amount,
+              paidAt: data.verifiedAt || Date.now()
+            });
+            addToastRef.current('Payment confirmed and verified!');
+          }
           break;
 
         case 'CHAT_MESSAGE':
@@ -542,6 +598,25 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     }
   };
 
+  // ── Query Initial Payment Status ────────────────────────────────────────────
+  useEffect(() => {
+    if (auction?.id) {
+      fetch(`/api/payments/status?auctionId=${encodeURIComponent(auction.id)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && data.success && data.paid) {
+            setPaymentStatus('completed');
+            setPaymentDetails({
+              paymentId: data.paymentId,
+              amount: data.amount,
+              paidAt: data.paidAt
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [auction?.id]);
+
   const handleHangUp = () => {
     if (disconnectGraceTimerRef.current) {
       clearTimeout(disconnectGraceTimerRef.current);
@@ -555,7 +630,164 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
     peerConnectionRef.current = null;
     setCallState('ENDED');
     addToast('You left the consultation room.');
-    setTimeout(onClose, 800);
+  };
+
+  // ── Handle Razorpay Checkout ────────────────────────────────────────────────
+  const handlePayNow = async () => {
+    if (isInitiatingPayment || isVerifyingPayment || paymentStatus === 'completed') return;
+    setIsInitiatingPayment(true);
+    setPaymentError('');
+
+    try {
+      // 1. Create order on the backend (authoritative amount determined by server)
+      const res = await fetch('/api/payments/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          auctionId: auction.id,
+          userId: currentUser?.id
+        })
+      });
+
+      const orderData = await res.json();
+      if (!res.ok || !orderData.success) {
+        if (orderData.alreadyPaid) {
+          setPaymentStatus('completed');
+          setPaymentDetails({ paymentId: orderData.paymentId, amount: paymentAmount });
+          addToast('This auction lot has already been settled.');
+        } else {
+          setPaymentError(orderData.error || 'Failed to initialize payment order on server.');
+        }
+        setIsInitiatingPayment(false);
+        return;
+      }
+
+      // 2. Local simulation/test mode when keys are placeholder samples
+      if (
+        orderData.isSimulation &&
+        (!orderData.keyId ||
+          orderData.keyId === 'rzp_test_placeholder' ||
+          orderData.keyId === 'rzp_test_sample')
+      ) {
+        setIsVerifyingPayment(true);
+        const simVerifyRes = await fetch('/api/payments/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.orderId,
+            razorpay_payment_id: `pay_sim_${Date.now()}`,
+            razorpay_signature: `sig_sim_${Date.now()}`,
+            auctionId: auction.id,
+            userId: currentUser?.id
+          })
+        });
+        const simVerifyData = await simVerifyRes.json();
+        if (simVerifyData.success) {
+          setPaymentStatus('completed');
+          setPaymentDetails({
+            paymentId: simVerifyData.paymentId,
+            amount: orderData.amount,
+            paidAt: simVerifyData.verifiedAt || Date.now()
+          });
+          signalingRef.current?.send('PAYMENT_CONFIRMED', {
+            auctionId: auction.id,
+            paymentId: simVerifyData.paymentId,
+            amount: orderData.amount,
+            verifiedAt: simVerifyData.verifiedAt || Date.now()
+          });
+          addToast('Payment simulation verified and recorded successfully!');
+        } else {
+          setPaymentStatus('failed');
+          setPaymentError(simVerifyData.error || 'Verification failed on server.');
+        }
+        setIsVerifyingPayment(false);
+        setIsInitiatingPayment(false);
+        return;
+      }
+
+      // 3. Live or genuine test keys: Load Razorpay Checkout SDK and open popup
+      const sdkLoaded = await loadRazorpayScript();
+      if (!sdkLoaded || typeof window.Razorpay === 'undefined') {
+        setPaymentError('Razorpay Checkout SDK failed to load. Please check your internet connection.');
+        setIsInitiatingPayment(false);
+        return;
+      }
+
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amount * 100, // paise
+        currency: orderData.currency || 'INR',
+        name: 'VEYRA Marketplace',
+        description: `Settlement for Lot #${auction.id.toUpperCase()} — ${auction.name || 'Artisan Consultation'}`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: currentDisplayName || currentUser?.name || '',
+          email: currentUser?.email || '',
+          contact: currentUser?.phone || ''
+        },
+        theme: {
+          color: '#783b4b'
+        },
+        handler: async function (response) {
+          try {
+            setIsVerifyingPayment(true);
+            const verifyRes = await fetch('/api/payments/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                auctionId: auction.id,
+                userId: currentUser?.id
+              })
+            });
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.success) {
+              setPaymentStatus('completed');
+              setPaymentDetails({
+                paymentId: response.razorpay_payment_id,
+                amount: orderData.amount,
+                paidAt: verifyData.verifiedAt || Date.now()
+              });
+              signalingRef.current?.send('PAYMENT_CONFIRMED', {
+                auctionId: auction.id,
+                paymentId: response.razorpay_payment_id,
+                amount: orderData.amount,
+                verifiedAt: verifyData.verifiedAt || Date.now()
+              });
+              addToast('Payment verified and confirmed successfully!');
+            } else {
+              setPaymentStatus('failed');
+              setPaymentError(verifyData.error || 'Payment signature verification failed on the server.');
+            }
+          } catch (err) {
+            setPaymentStatus('failed');
+            setPaymentError('Network failure during payment verification.');
+          } finally {
+            setIsVerifyingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setIsInitiatingPayment(false);
+          }
+        }
+      };
+
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.on('payment.failed', function (resp) {
+        setPaymentStatus('failed');
+        setPaymentError(resp.error?.description || 'Payment was declined or cancelled.');
+        setIsInitiatingPayment(false);
+      });
+      rzpInstance.open();
+      setIsInitiatingPayment(false);
+    } catch (err) {
+      console.error('[handlePayNow Error]:', err);
+      setPaymentError(err.message || 'Payment initiation failed.');
+      setIsInitiatingPayment(false);
+    }
   };
 
   // ── Send Chat Message ───────────────────────────────────────────────────────
@@ -679,7 +911,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             <span
               style={{
                 width: '8px', height: '8px', borderRadius: '50%',
-                backgroundColor: callState === 'CONNECTED' ? '#22c55e' : '#f59e0b'
+                backgroundColor: callState === 'CONNECTED' ? '#22c55e' : callState === 'ENDED' ? (paymentStatus === 'completed' ? '#22c55e' : '#888') : '#f59e0b'
               }}
             />
             <div>
@@ -689,7 +921,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
                   textTransform: 'uppercase', color: '#999', display: 'block'
                 }}
               >
-                Post-Auction Private Consultation — Lot #{auction.id.toUpperCase()}
+                {callState === 'ENDED' ? 'Concluded Consultation' : 'Post-Auction Private Consultation'} — Lot #{auction.id.toUpperCase()}
               </span>
               <strong style={{ fontSize: 'var(--text-sm)', color: '#FFF' }}>
                 {isWinningBuyer
@@ -700,7 +932,7 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            {callState === 'CONNECTED' && (
+            {(callState === 'CONNECTED' || callState === 'ENDED') && (
               <div
                 style={{
                   display: 'flex', alignItems: 'center', gap: '6px',
@@ -709,22 +941,492 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
                   fontVariantNumeric: 'tabular-nums'
                 }}
               >
-                <Clock size={13} color="#22c55e" />
+                <Clock size={13} color={callState === 'CONNECTED' ? '#22c55e' : '#aaa'} />
                 <span>{formatDuration(callDuration)}</span>
               </div>
             )}
             <button
-              onClick={handleHangUp}
+              onClick={callState === 'ENDED' ? onClose : handleHangUp}
               style={{ background: 'transparent', border: 'none', color: '#AAA', cursor: 'pointer', padding: '4px' }}
-              title="Leave meeting"
+              title={callState === 'ENDED' ? 'Close window' : 'Leave meeting'}
             >
               <X size={20} />
             </button>
           </div>
         </div>
 
-        {/* ── Body: Video Area + Chat ── */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        {/* ── Body: Payment Screen (when call ends) OR WebRTC Video + Chat (when call active) ── */}
+        {callState === 'ENDED' ? (
+          /* ── Post-Call Payment Screen ── */
+          <div
+            style={{
+              padding: '40px 24px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              maxWidth: '580px',
+              margin: '0 auto',
+              width: '100%',
+              minHeight: '440px',
+              textAlign: 'center'
+            }}
+          >
+            {/* Status Icon Badge */}
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                backgroundColor:
+                  paymentStatus === 'completed'
+                    ? 'rgba(34, 197, 94, 0.15)'
+                    : paymentStatus === 'failed'
+                    ? 'rgba(239, 68, 68, 0.15)'
+                    : 'rgba(120, 59, 75, 0.25)',
+                border: `1.5px solid ${
+                  paymentStatus === 'completed'
+                    ? '#22c55e'
+                    : paymentStatus === 'failed'
+                    ? '#ef4444'
+                    : 'var(--accent-burgundy)'
+                }`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 18px'
+              }}
+            >
+              {paymentStatus === 'completed' ? (
+                <CheckCircle2 size={32} color="#22c55e" />
+              ) : paymentStatus === 'failed' ? (
+                <AlertTriangle size={30} color="#ef4444" />
+              ) : (
+                <PhoneOff size={28} color="var(--accent-burgundy)" />
+              )}
+            </div>
+
+            {/* Title & Context */}
+            {auction.id === 'auc-dev-test' && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 12px',
+                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  borderRadius: '16px',
+                  fontSize: '11px',
+                  color: '#f59e0b',
+                  fontWeight: 600,
+                  marginBottom: '10px',
+                  letterSpacing: '0.04em'
+                }}
+              >
+                <span>DEVELOPMENT TEST LOT (Nominal Amount ₹100)</span>
+              </div>
+            )}
+            <h2
+              style={{
+                fontSize: '1.75rem',
+                fontFamily: 'var(--font-heading)',
+                color: '#FFFFFF',
+                marginBottom: '6px'
+              }}
+            >
+              Video Call Ended
+            </h2>
+            <p
+              style={{
+                fontSize: '13px',
+                color: '#AAA',
+                marginBottom: '24px',
+                lineHeight: 1.5
+              }}
+            >
+              {isWinningBuyer
+                ? `Your post-auction consultation with ${sellerName} has concluded.`
+                : `Your post-auction consultation with winning collector ${winnerName} has concluded.`}
+            </p>
+
+            {/* Consultation Summary & Payment Details Box */}
+            <div
+              style={{
+                width: '100%',
+                backgroundColor: '#222222',
+                border: '1px solid #333333',
+                borderRadius: 'var(--radius-xs)',
+                padding: '20px',
+                marginBottom: '20px',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px'
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingBottom: '12px',
+                  borderBottom: '1px solid #2d2d2d'
+                }}
+              >
+                <span style={{ fontSize: '12px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Consultation Summary
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                    color: '#22c55e',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontWeight: 600
+                  }}
+                >
+                  Session Documented
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: '#BBB', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={15} color="var(--accent-burgundy)" />
+                  Call Duration
+                </span>
+                <strong style={{ fontSize: '14px', color: '#FFF', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatDuration(callDuration)}
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: '#BBB', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={15} color="var(--accent-burgundy)" />
+                  Auction Object
+                </span>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    color: '#EEE',
+                    maxWidth: '260px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title={auction.name}
+                >
+                  {auction.name}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  paddingTop: '12px',
+                  borderTop: '1px solid #2d2d2d'
+                }}
+              >
+                <div>
+                  <span style={{ fontSize: '13px', color: '#FFF', fontWeight: 600, display: 'block' }}>
+                    Payment Amount
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>
+                    Authoritative Winning Hammer Price
+                  </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span
+                    style={{
+                      fontSize: '1.45rem',
+                      fontWeight: 700,
+                      color: 'var(--accent-gold, #c5a059)',
+                      fontFamily: 'var(--font-heading)'
+                    }}
+                  >
+                    ₹{paymentAmount.toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Status Banners & Actions ── */}
+
+            {/* 1. Payment Successful */}
+            {paymentStatus === 'completed' && (
+              <div style={{ width: '100%', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '16px',
+                    marginBottom: '16px',
+                    textAlign: 'center'
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      color: '#22c55e',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      marginBottom: '4px'
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Payment Successful</span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#AAA', margin: '0 0 6px' }}>
+                    The payment has been cryptographically verified and recorded in the escrow registry.
+                  </p>
+                  {paymentDetails?.paymentId && (
+                    <p style={{ fontSize: '11px', color: '#888', fontVariantNumeric: 'tabular-nums', margin: 0 }}>
+                      Payment ID: <code style={{ color: '#22c55e' }}>{paymentDetails.paymentId}</code>
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={onClose}
+                  className="btn btn-primary"
+                  style={{
+                    width: '100%',
+                    height: '44px',
+                    backgroundColor: '#262626',
+                    color: '#FFF',
+                    border: '1px solid #444',
+                    borderRadius: 'var(--radius-xs)',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Close & Return to Auction Room
+                </button>
+              </div>
+            )}
+
+            {/* 2. Payment Verifying Spinner */}
+            {isVerifyingPayment && (
+              <div
+                style={{
+                  width: '100%',
+                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '16px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px'
+                }}
+              >
+                <Loader2 size={18} color="#f59e0b" style={{ animation: 'spin 1s infinite linear' }} />
+                <span style={{ fontSize: '13px', color: '#f59e0b', fontWeight: 500 }}>
+                  Verifying cryptographic signature with server…
+                </span>
+              </div>
+            )}
+
+            {/* 3. Payment Failed Error & Retry */}
+            {paymentStatus === 'failed' && !isVerifyingPayment && (
+              <div style={{ width: '100%', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '14px',
+                    marginBottom: '16px',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      color: '#ef4444',
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      marginBottom: '4px'
+                    }}
+                  >
+                    <AlertTriangle size={15} />
+                    <span>Payment Failed</span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#DDD', margin: 0 }}>
+                    {paymentError || 'Payment processing was unsuccessful. You can retry safely.'}
+                  </p>
+                </div>
+
+                {isWinningBuyer ? (
+                  <button
+                    onClick={handlePayNow}
+                    disabled={isInitiatingPayment}
+                    style={{
+                      width: '100%',
+                      height: '46px',
+                      backgroundColor: 'var(--accent-burgundy)',
+                      color: '#FFF',
+                      border: 'none',
+                      borderRadius: 'var(--radius-xs)',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: isInitiatingPayment ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isInitiatingPayment ? (
+                      <Loader2 size={16} style={{ animation: 'spin 1s infinite linear' }} />
+                    ) : (
+                      <RefreshCw size={16} />
+                    )}
+                    <span>Retry Payment</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={onClose}
+                    className="btn btn-secondary"
+                    style={{ width: '100%', height: '42px', fontSize: '13px' }}
+                  >
+                    Close Consultation
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 4. Pending / Initial State */}
+            {paymentStatus !== 'completed' && paymentStatus !== 'failed' && !isVerifyingPayment && (
+              <div style={{ width: '100%' }}>
+                {isWinningBuyer ? (
+                  <div>
+                    <button
+                      onClick={handlePayNow}
+                      disabled={isInitiatingPayment}
+                      style={{
+                        width: '100%',
+                        height: '50px',
+                        backgroundColor: 'var(--accent-burgundy)',
+                        color: '#FFF',
+                        border: 'none',
+                        borderRadius: 'var(--radius-xs)',
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        letterSpacing: '0.03em',
+                        cursor: isInitiatingPayment ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        boxShadow: '0 4px 18px rgba(120, 59, 75, 0.4)',
+                        transition: 'all 150ms ease'
+                      }}
+                    >
+                      {isInitiatingPayment ? (
+                        <>
+                          <Loader2 size={18} style={{ animation: 'spin 1s infinite linear' }} />
+                          <span>Opening Razorpay Checkout…</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          <span>Pay Now • ₹{paymentAmount.toLocaleString('en-IN')}</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div
+                      style={{
+                        marginTop: '14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        fontSize: '11px',
+                        color: '#888'
+                      }}
+                    >
+                      <Lock size={12} color="#22c55e" />
+                      <span>Razorpay 256-Bit Escrow Protection • Backend Verified</span>
+                    </div>
+
+                    <button
+                      onClick={onClose}
+                      style={{
+                        marginTop: '14px',
+                        background: 'none',
+                        border: 'none',
+                        color: '#777',
+                        fontSize: '12px',
+                        textDecoration: 'underline',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Dismiss for now
+                    </button>
+                  </div>
+                ) : (
+                  /* Seller View */
+                  <div>
+                    <div
+                      style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        borderRadius: 'var(--radius-xs)',
+                        padding: '16px',
+                        marginBottom: '20px',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          color: '#f59e0b',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          marginBottom: '6px'
+                        }}
+                      >
+                        <Clock size={16} />
+                        <span>Awaiting Settlement from Winning Collector</span>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#AAA', margin: 0, lineHeight: 1.5 }}>
+                        Collector <strong>{winnerName}</strong> has been presented with the payment screen for ₹
+                        {paymentAmount.toLocaleString('en-IN')}. This window will update in real time when verified.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={onClose}
+                      className="btn btn-secondary"
+                      style={{ width: '100%', height: '44px', fontSize: '13px' }}
+                    >
+                      Close Consultation Window
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* ── Body: Video Area + Chat ── */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
           {/* ── Video Area ── */}
           <div
@@ -1187,7 +1889,9 @@ export const AuctionCallModal = ({ auction, currentUser, onClose }) => {
             Exit Consultation
           </button>
         </div>
-      </div>
+      </>
+    )}
+  </div>
 
       <style>{`
         @keyframes spin {
