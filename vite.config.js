@@ -35,7 +35,53 @@ function veyraBackendPlugin() {
 export default defineConfig({
   plugins: [react(), veyraBackendPlugin()],
   server: {
-    port: 3000,
-    open: true
+    port: Number(process.env.VITE_PORT) || 3000,
+    open: false,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        changeOrigin: true
+      },
+      '/socket.io': {
+        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        ws: true
+      }
+    }
+  },
+  preview: {
+    port: Number(process.env.VITE_PREVIEW_PORT) || 4173,
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        changeOrigin: true
+      },
+      '/socket.io': {
+        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        ws: true
+      }
+    }
+  },
+  build: {
+    target: 'es2020',
+    sourcemap: false,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@supabase')) {
+              return 'vendor-supabase';
+            }
+            if (id.includes('socket.io-client') || id.includes('engine.io-client')) {
+              return 'vendor-socket';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+          }
+        }
+      }
+    }
   }
 });
+

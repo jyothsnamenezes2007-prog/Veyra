@@ -5,7 +5,7 @@ import { formatINR } from '../data/products';
 import { getAuthoritativeAuctionStatus, formatAuctionCountdown } from '../data/auctions';
 import { useWishlist } from '../context/WishlistContext';
 
-export const AuctionCard = ({ auction, onOpenBidModal }) => {
+export const AuctionCard = React.memo(({ auction, onOpenBidModal }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const { isInWishlist, toggleWishlist } = useWishlist();
 
@@ -44,6 +44,7 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
             src={auction.image}
             alt={auction.name}
             loading="lazy"
+            decoding="async"
             onLoad={() => setImageLoaded(true)}
             style={{
               width: '100%',
@@ -310,4 +311,7 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
       </div>
     </article>
   );
-};
+});
+
+AuctionCard.displayName = 'AuctionCard';
+

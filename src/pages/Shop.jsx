@@ -36,6 +36,8 @@ export const Shop = () => {
   const [priceRange, setPriceRange] = useState('all');
   const [conditionFilter, setConditionFilter] = useState('all');
   const [inStockOnly, setInStockOnly] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 12;
 
   // Sync state with URL params
   useEffect(() => {
@@ -44,6 +46,11 @@ export const Shop = () => {
     const q = searchParams.get('search');
     if (q !== null) setSearchTerm(q);
   }, [searchParams]);
+
+  // Reset pagination on filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy]);
 
   const handleCategorySelect = (catId) => {
     setActiveCategory(catId);
@@ -196,6 +203,12 @@ export const Shop = () => {
 
     return pool;
   }, [allCatalogItems, categories, activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy]);
+
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredProducts.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredProducts, currentPage]);
 
   return (
     <div style={{ paddingTop: '36px', paddingBottom: '96px', backgroundColor: 'var(--bg-primary)' }}>
@@ -390,56 +403,63 @@ export const Shop = () => {
         </div>
 
         {/* Results Count Banner */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '8px' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Showing <strong>{filteredProducts.length}</strong> {searchTerm.trim() ? 'distinctive objects & lots' : 'distinctive objects'}
+            Showing <strong>{filteredProducts.length > 0 ? (currentPage - 1) * ITEMS_PER_PAGE + 1 : 0}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredProducts.length)}</strong> of <strong>{filteredProducts.length}</strong> {searchTerm.trim() ? 'distinctive objects & lots' : 'distinctive objects'}
           </span>
+          {totalPages > 1 && (
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              Page {currentPage} of {totalPages}
+            </span>
+          )}
         </div>
 
         {/* Responsive Product Grid */}
         {filteredProducts.length > 0 ? (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '28px'
-            }}
-          >
-            {filteredProducts.map((product) => {
-              const isFav = isInWishlist(product.id);
-              const targetUrl = product.isAuction ? `/live/${product.id}` : `/product/${product.id}`;
+          <div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '28px'
+              }}
+            >
+              {paginatedProducts.map((product) => {
+                const isFav = isInWishlist(product.id);
+                const targetUrl = product.isAuction ? `/live/${product.id}` : `/product/${product.id}`;
 
-              return (
-                <article
-                  key={product.isAuction ? `auc-${product.id}` : `prod-${product.id}`}
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-xs)',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}
-                  className="card-interactive"
-                >
-                  {/* Image Frame */}
-                  <div
+                return (
+                  <article
+                    key={product.isAuction ? `auc-${product.id}` : `prod-${product.id}`}
                     style={{
-                      position: 'relative',
-                      width: '100%',
-                      aspectRatio: '1 / 1',
-                      backgroundColor: 'var(--surface-secondary)',
-                      overflow: 'hidden'
+                      backgroundColor: '#FFFFFF',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-xs)',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column'
                     }}
+                    className="card-interactive"
                   >
-                    <Link to={targetUrl} style={{ display: 'block', width: '100%', height: '100%' }}>
-                      <img
-                        src={product.image}
-                        alt={product.name}
-                        loading="lazy"
-                        style={{
-                          width: '100%',
-                          height: '100%',
+                    {/* Image Frame */}
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        aspectRatio: '1 / 1',
+                        backgroundColor: 'var(--surface-secondary)',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <Link to={targetUrl} style={{ display: 'block', width: '100%', height: '100%' }}>
+                        <img
+                          src={product.image}
+                          alt={product.name}
+                          loading="lazy"
+                          decoding="async"
+                          style={{
+                            width: '100%',
+                            height: '100%',
                           objectFit: 'cover'
                         }}
                       />
@@ -584,6 +604,78 @@ export const Shop = () => {
                 </article>
               );
             })}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginTop: '48px',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setCurrentPage((prev) => Math.max(1, prev - 1));
+                    window.scrollTo({ top: 300, behavior: 'smooth' });
+                  }}
+                  disabled={currentPage === 1}
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    opacity: currentPage === 1 ? 0.5 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Previous
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => {
+                  const isActive = pg === currentPage;
+                  return (
+                    <button
+                      key={pg}
+                      onClick={() => {
+                        setCurrentPage(pg);
+                        window.scrollTo({ top: 300, behavior: 'smooth' });
+                      }}
+                      style={{
+                        minWidth: '36px',
+                        height: '36px',
+                        borderRadius: 'var(--radius-xs)',
+                        border: isActive ? '1px solid var(--accent-burgundy)' : '1px solid var(--border-color)',
+                        backgroundColor: isActive ? 'var(--accent-burgundy)' : '#FFFFFF',
+                        color: isActive ? '#FFFFFF' : 'var(--text-primary)',
+                        fontWeight: isActive ? 600 : 400,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      {pg}
+                    </button>
+                  );
+                })}
+
+                <button
+                  onClick={() => {
+                    setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+                    window.scrollTo({ top: 300, behavior: 'smooth' });
+                  }}
+                  disabled={currentPage === totalPages}
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    opacity: currentPage === totalPages ? 0.5 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div

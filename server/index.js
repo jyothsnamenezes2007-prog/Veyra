@@ -42,6 +42,24 @@ initDatabase();
 // Start background scheduler
 scheduler.start();
 
+const distPath = path.resolve(__dirname, '..', 'dist');
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=UTF-8',
+  '.js': 'application/javascript; charset=UTF-8',
+  '.css': 'text/css; charset=UTF-8',
+  '.json': 'application/json; charset=UTF-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
+};
+
 const server = http.createServer(async (req, res) => {
   // Let Socket.IO handle /socket.io polling and upgrade requests
   if (req.url && req.url.startsWith('/socket.io')) {
@@ -59,11 +77,59 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const handled = await handleApiRequest(req, res);
-  if (!handled) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Endpoint not found' }));
+  // Handle /api routes
+  if (req.url && req.url.startsWith('/api')) {
+    const handled = await handleApiRequest(req, res);
+    if (!handled) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Endpoint not found' }));
+    }
+    return;
   }
+
+  // If production dist directory exists, serve static assets and SPA fallback
+  if (fs.existsSync(distPath)) {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    let pathname = decodeURIComponent(parsedUrl.pathname);
+    let filePath = path.join(distPath, pathname);
+
+    // Prevent directory traversal attacks
+    if (!filePath.startsWith(distPath)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access Denied');
+      return;
+    }
+
+    // Check if requested static file exists
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+      // Cache fingerprinted assets in /assets/ for 1 year, others no-cache
+      if (pathname.startsWith('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+
+      res.writeHead(200, { 'Content-Type': contentType });
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+
+    // SPA fallback: serve dist/index.html for client-side routing
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=UTF-8' });
+      fs.createReadStream(indexPath).pipe(res);
+      return;
+    }
+  }
+
+  // Fallback if neither API nor dist static files handled
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Endpoint not found' }));
 });
 
 // Attach Socket.IO to the HTTP server

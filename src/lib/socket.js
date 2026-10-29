@@ -18,8 +18,11 @@ let socketInstance = null;
  */
 export function getSocket() {
   if (!socketInstance && typeof window !== 'undefined') {
-    // In browser, window.location.origin connects to dev server or backend
-    const socketUrl = window.location.origin;
+    // In browser, respect VITE_SOCKET_URL, VITE_API_URL, or default to window.location.origin
+    const socketUrl =
+      (import.meta.env.VITE_SOCKET_URL && import.meta.env.VITE_SOCKET_URL.trim()) ||
+      (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim()) ||
+      window.location.origin;
 
     socketInstance = io(socketUrl, {
       autoConnect: true,

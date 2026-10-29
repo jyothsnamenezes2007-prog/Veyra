@@ -5,7 +5,7 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { formatINR } from '../data/products';
 
-export const ProductCard = ({ product, onQuickView }) => {
+export const ProductCard = React.memo(({ product, onQuickView }) => {
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
   const [imageLoaded, setImageLoaded] = useState(false);
@@ -52,6 +52,7 @@ export const ProductCard = ({ product, onQuickView }) => {
             src={product.image}
             alt={product.name}
             loading="lazy"
+            decoding="async"
             onLoad={() => setImageLoaded(true)}
             style={{
               width: '100%',
@@ -265,4 +266,7 @@ export const ProductCard = ({ product, onQuickView }) => {
       </div>
     </article>
   );
-};
+});
+
+ProductCard.displayName = 'ProductCard';
+
