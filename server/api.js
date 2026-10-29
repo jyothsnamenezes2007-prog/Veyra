@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import {
   getAuctions,
   getAuctionById,
@@ -14,7 +15,12 @@ import {
   upsertProxyConfig,
   updateProxyConfig,
   getCommentsByAuction,
-  insertComment
+  insertComment,
+  getPayments,
+  getPaymentById,
+  getPaymentByAuctionId,
+  insertPayment,
+  updatePayment
 } from './db.js';
 import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
@@ -816,6 +822,307 @@ export async function handleApiRequest(req, res) {
       sendJson(res, 500, { success: false, error: err.message });
       return true;
     }
+  }
+
+  // ── Payment Endpoints (Razorpay Video Call Settlement) ──────────────────────
+
+  // 9a. POST /api/payments/create-order
+  if (pathname === '/api/payments/create-order' && method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { auctionId, userId } = body;
+
+      if (!auctionId) {
+        sendJson(res, 400, { success: false, error: 'auctionId is required to create a payment order.' });
+        return true;
+      }
+
+      // Production gate: Strictly block development test auction in production
+      if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
+        sendJson(res, 403, { success: false, error: 'Development test auctions cannot be accessed in production.' });
+        return true;
+      }
+
+      const auction = getAuctionById(auctionId);
+      if (!auction) {
+        sendJson(res, 404, { success: false, error: `Auction "${auctionId}" not found.` });
+        return true;
+      }
+
+      // Check if already paid to prevent duplicate payments
+      const existingPayment = getPaymentByAuctionId(auctionId);
+      if (existingPayment || auction.paymentStatus === 'completed') {
+        sendJson(res, 400, {
+          success: false,
+          alreadyPaid: true,
+          error: 'This auction lot consultation has already been successfully settled and paid.',
+          paymentId: existingPayment?.paymentId || auction.paymentId
+        });
+        return true;
+      }
+
+      // Authoritative payment amount from winning bid / hammer price
+      const authoritativeAmount =
+        auction.id === 'auc-dev-test'
+          ? 100
+          : Math.round(
+              Number(auction.winningBid || auction.winner?.amount || auction.currentBid || auction.startingBid || 0)
+            );
+
+      if (authoritativeAmount <= 0) {
+        sendJson(res, 400, {
+          success: false,
+          error: 'Cannot create payment order: No valid winning bid amount found on this auction lot.'
+        });
+        return true;
+      }
+
+      const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '';
+      const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
+
+      const isLiveKeyConfigured =
+        keyId &&
+        keySecret &&
+        keyId.startsWith('rzp_') &&
+        keySecret !== 'sample_secret_key_change_me' &&
+        !keySecret.includes('change_me');
+
+      if (isLiveKeyConfigured) {
+        // Genuine Razorpay Orders API call
+        const amountInPaise = authoritativeAmount * 100;
+        const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
+
+        const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${basicAuth}`
+          },
+          body: JSON.stringify({
+            amount: amountInPaise,
+            currency: 'INR',
+            receipt: `rcpt_${auctionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}_${Date.now().toString().slice(-6)}`,
+            notes: {
+              auctionId,
+              userId: userId || 'collector',
+              lotTitle: auction.name || 'Post-Auction Consultation'
+            }
+          })
+        });
+
+        const rzpData = await rzpRes.json();
+        if (!rzpRes.ok) {
+          console.error('[Razorpay Order Creation Error]:', rzpData);
+          sendJson(res, 502, {
+            success: false,
+            error: rzpData.error?.description || 'Razorpay order creation failed.'
+          });
+          return true;
+        }
+
+        insertPayment({
+          id: `pay_rec_${Date.now()}`,
+          orderId: rzpData.id,
+          auctionId,
+          userId,
+          amount: authoritativeAmount,
+          currency: 'INR',
+          status: 'created',
+          createdAt: Date.now()
+        });
+
+        sendJson(res, 200, {
+          success: true,
+          orderId: rzpData.id,
+          amount: authoritativeAmount,
+          currency: 'INR',
+          keyId,
+          auctionName: auction.name,
+          sellerName: auction.seller || auction.maker
+        });
+        return true;
+      }
+
+      // Safe test/simulation fallback when placeholder keys are used in local development
+      const simOrderId = `order_sim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      insertPayment({
+        id: `pay_rec_${Date.now()}`,
+        orderId: simOrderId,
+        auctionId,
+        userId,
+        amount: authoritativeAmount,
+        currency: 'INR',
+        status: 'created',
+        createdAt: Date.now(),
+        isSimulation: true
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        orderId: simOrderId,
+        amount: authoritativeAmount,
+        currency: 'INR',
+        keyId: keyId || 'rzp_test_placeholder',
+        isSimulation: true,
+        auctionName: auction.name,
+        sellerName: auction.seller || auction.maker
+      });
+      return true;
+    } catch (err) {
+      console.error('[Payment Order Error]:', err);
+      sendJson(res, 500, { success: false, error: err.message || 'Server error creating payment order.' });
+      return true;
+    }
+  }
+
+  // 9b. POST /api/payments/verify
+  if (pathname === '/api/payments/verify' && method === 'POST') {
+    try {
+      const body = await parseJsonBody(req);
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, auctionId, userId } = body;
+
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !auctionId) {
+        sendJson(res, 400, {
+          success: false,
+          error: 'Missing required payment verification parameters (order_id, payment_id, signature, auctionId).'
+        });
+        return true;
+      }
+
+      // Production gate: Strictly block development test auction in production
+      if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
+        sendJson(res, 403, { success: false, error: 'Development test payment verification blocked in production.' });
+        return true;
+      }
+
+      const auction = getAuctionById(auctionId);
+      if (!auction) {
+        sendJson(res, 404, { success: false, error: `Auction "${auctionId}" not found.` });
+        return true;
+      }
+
+      // Prevent duplicate verification/payments
+      const existing = getPaymentByAuctionId(auctionId);
+      if (existing && existing.status === 'completed') {
+        sendJson(res, 200, {
+          success: true,
+          alreadyPaid: true,
+          message: 'Payment has already been verified and recorded.',
+          paymentId: existing.paymentId
+        });
+        return true;
+      }
+
+      const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
+      let isAuthentic = false;
+
+      if (razorpay_order_id.startsWith('order_sim_')) {
+        // Simulation verification for test environments without live credentials
+        isAuthentic = Boolean(razorpay_signature);
+      } else if (keySecret) {
+        // Cryptographic HMAC SHA-256 verification
+        const expectedSignature = crypto
+          .createHmac('sha256', keySecret)
+          .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+          .digest('hex');
+
+        try {
+          const bufExpected = Buffer.from(expectedSignature, 'utf8');
+          const bufActual = Buffer.from(razorpay_signature, 'utf8');
+          isAuthentic = bufExpected.length === bufActual.length && crypto.timingSafeEqual(bufExpected, bufActual);
+        } catch (e) {
+          isAuthentic = false;
+        }
+      }
+
+      if (!isAuthentic) {
+        console.warn(`[Payment Verification Failed] Order: ${razorpay_order_id}, Payment: ${razorpay_payment_id}`);
+        sendJson(res, 400, {
+          success: false,
+          error: 'Payment verification failed: Invalid cryptographic signature.'
+        });
+        return true;
+      }
+
+      const now = Date.now();
+      const paymentRecord =
+        updatePayment(razorpay_order_id, {
+          paymentId: razorpay_payment_id,
+          signature: razorpay_signature,
+          status: 'completed',
+          verifiedAt: now
+        }) ||
+        insertPayment({
+          id: `pay_${now}`,
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          signature: razorpay_signature,
+          auctionId,
+          userId,
+          status: 'completed',
+          verifiedAt: now
+        });
+
+      // Update auction record in database
+      const updatedAuction = updateAuction(auctionId, {
+        paymentStatus: 'completed',
+        paymentId: razorpay_payment_id,
+        paidAt: now,
+        paidAmount: paymentRecord?.amount
+      });
+
+      // Broadcast real-time payment confirmation across all connected peers
+      broadcastRealtimeEvent('PAYMENT_CONFIRMED', {
+        auctionId,
+        paymentId: razorpay_payment_id,
+        amount: paymentRecord?.amount,
+        userId,
+        verifiedAt: now
+      });
+
+      console.log(`[Payment Verified] Lot #${auctionId} settled for ₹${paymentRecord?.amount || ''} (Payment ID: ${razorpay_payment_id})`);
+
+      sendJson(res, 200, {
+        success: true,
+        message: 'Payment signature verified and settlement confirmed successfully.',
+        paymentId: razorpay_payment_id,
+        verifiedAt: now,
+        amount: paymentRecord?.amount,
+        auction: updatedAuction
+      });
+      return true;
+    } catch (err) {
+      console.error('[Payment Verification Error]:', err);
+      sendJson(res, 500, { success: false, error: err.message || 'Server error verifying payment.' });
+      return true;
+    }
+  }
+
+  // 9c. GET /api/payments/status
+  if (pathname === '/api/payments/status' && method === 'GET') {
+    const auctionId = url.searchParams.get('auctionId');
+    if (!auctionId) {
+      sendJson(res, 400, { success: false, error: 'auctionId query parameter is required.' });
+      return true;
+    }
+
+    // Production gate: Strictly block development test auction in production
+    if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
+      sendJson(res, 403, { success: false, error: 'Test auction status unavailable in production.' });
+      return true;
+    }
+
+    const payment = getPaymentByAuctionId(auctionId);
+    const auction = getAuctionById(auctionId);
+    const isPaid = Boolean(payment?.status === 'completed' || auction?.paymentStatus === 'completed');
+    sendJson(res, 200, {
+      success: true,
+      paid: isPaid,
+      paymentId: payment?.paymentId || auction?.paymentId || null,
+      amount: payment?.amount || auction?.paidAmount || null,
+      paidAt: payment?.verifiedAt || auction?.paidAt || null
+    });
+    return true;
   }
 
   // 10. GET /api/products

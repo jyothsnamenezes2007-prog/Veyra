@@ -27,6 +27,9 @@ export function initDatabase() {
       if (!Array.isArray(dbCache.proxyConfigs)) {
         dbCache.proxyConfigs = [];
       }
+      if (!Array.isArray(dbCache.payments)) {
+        dbCache.payments = [];
+      }
       if (!dbCache.comments || typeof dbCache.comments !== 'object') {
         dbCache.comments = {};
       }
@@ -123,6 +126,7 @@ export function initDatabase() {
     reminders: ['up-2'],
     registrations: ['up-1'],
     proxyConfigs: [],
+    payments: [],
     comments: {
       'auc-1': [
         { id: 'c-1', user: 'ArchivalCurator', message: 'Incredible condition on the woven cane seating.', timestamp: now - 720000 },
@@ -162,6 +166,48 @@ export function saveDatabase() {
   return saveQueue;
 }
 
+// Development-only isolated test auction store (in-memory only, strictly excluded from production and never saved to db.json)
+export const DEV_TEST_AUCTION_ID = 'auc-dev-test';
+
+let devTestAuctionState = {
+  id: DEV_TEST_AUCTION_ID,
+  name: '[DEV TEST ONLY] Post-Auction Consultation Lot',
+  seller: 'Veyra Artisan Atelier',
+  sellerId: 'seller-atelier-1',
+  type: 'auction',
+  isAuction: true,
+  status: 'ended',
+  startingBid: 100,
+  currentBid: 100,
+  winningBid: 100,
+  minIncrement: 50,
+  bidCount: 1,
+  paymentStatus: 'pending',
+  isDevTest: true
+};
+
+let devTestPayments = [];
+
+export function resetDevTestAuction() {
+  devTestAuctionState = {
+    id: DEV_TEST_AUCTION_ID,
+    name: '[DEV TEST ONLY] Post-Auction Consultation Lot',
+    seller: 'Veyra Artisan Atelier',
+    sellerId: 'seller-atelier-1',
+    type: 'auction',
+    isAuction: true,
+    status: 'ended',
+    startingBid: 100,
+    currentBid: 100,
+    winningBid: 100,
+    minIncrement: 50,
+    bidCount: 1,
+    paymentStatus: 'pending',
+    isDevTest: true
+  };
+  devTestPayments = [];
+}
+
 export function getDatabase() {
   if (!dbCache) initDatabase();
   return dbCache;
@@ -174,6 +220,10 @@ export function getAuctions() {
 }
 
 export function getAuctionById(id) {
+  if (id === DEV_TEST_AUCTION_ID) {
+    if (process.env.NODE_ENV === 'production') return null;
+    return devTestAuctionState;
+  }
   const db = getDatabase();
   return db.auctions.find((a) => a.id === id || a.productId === id);
 }
@@ -186,6 +236,11 @@ export function insertAuction(auction) {
 }
 
 export function updateAuction(id, updates) {
+  if (id === DEV_TEST_AUCTION_ID) {
+    if (process.env.NODE_ENV === 'production') return null;
+    devTestAuctionState = { ...devTestAuctionState, ...updates };
+    return devTestAuctionState;
+  }
   const db = getDatabase();
   const index = db.auctions.findIndex((a) => a.id === id || a.productId === id);
   if (index === -1) return null;
@@ -315,4 +370,72 @@ export function insertComment(auctionId, comment) {
   dbCache.comments[auctionId].push(comment);
   persistDatabaseSync();
   return comment;
+}
+
+// Payment operations
+export function getPayments() {
+  const db = getDatabase();
+  return db.payments || [];
+}
+
+export function getPaymentById(id) {
+  const db = getDatabase();
+  return (db.payments || []).find((p) => p.id === id || p.orderId === id || p.paymentId === id);
+}
+
+export function getPaymentByAuctionId(auctionId) {
+  if (auctionId === DEV_TEST_AUCTION_ID) {
+    if (process.env.NODE_ENV === 'production') return null;
+    return devTestPayments.find((p) => p.status === 'completed');
+  }
+  const db = getDatabase();
+  return (db.payments || []).find((p) => p.auctionId === auctionId && p.status === 'completed');
+}
+
+export function insertPayment(payment) {
+  if (payment.auctionId === DEV_TEST_AUCTION_ID || payment.isDevTest) {
+    if (process.env.NODE_ENV === 'production') return null;
+    const existingIdx = devTestPayments.findIndex(
+      (p) => p.orderId === payment.orderId || (payment.id && p.id === payment.id)
+    );
+    if (existingIdx !== -1) {
+      devTestPayments[existingIdx] = { ...devTestPayments[existingIdx], ...payment, isDevTest: true };
+      return devTestPayments[existingIdx];
+    }
+    const record = { ...payment, isDevTest: true };
+    devTestPayments.unshift(record);
+    return record;
+  }
+  const db = getDatabase();
+  if (!Array.isArray(db.payments)) {
+    db.payments = [];
+  }
+  const existingIdx = db.payments.findIndex((p) => p.orderId === payment.orderId || (payment.id && p.id === payment.id));
+  if (existingIdx !== -1) {
+    db.payments[existingIdx] = { ...db.payments[existingIdx], ...payment };
+    saveDatabase();
+    return db.payments[existingIdx];
+  }
+  db.payments.unshift(payment);
+  saveDatabase();
+  return payment;
+}
+
+export function updatePayment(orderId, updates) {
+  const devIdx = devTestPayments.findIndex((p) => p.orderId === orderId || p.paymentId === orderId || p.id === orderId);
+  if (devIdx !== -1) {
+    if (process.env.NODE_ENV === 'production') return null;
+    devTestPayments[devIdx] = { ...devTestPayments[devIdx], ...updates, isDevTest: true };
+    return devTestPayments[devIdx];
+  }
+  const db = getDatabase();
+  if (!Array.isArray(db.payments)) {
+    db.payments = [];
+    return null;
+  }
+  const idx = db.payments.findIndex((p) => p.orderId === orderId || p.paymentId === orderId || p.id === orderId);
+  if (idx === -1) return null;
+  db.payments[idx] = { ...db.payments[idx], ...updates };
+  saveDatabase();
+  return db.payments[idx];
 }

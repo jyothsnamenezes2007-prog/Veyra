@@ -1895,12 +1895,18 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "active",
+      "status": "ended",
       "startTimestamp": 1792995092859,
       "endTimestamp": 1793254292859,
       "endTime": 1793254292859,
-      "remainingSeconds": 56700,
-      "winner": null,
+      "remainingSeconds": 0,
+      "winner": {
+        "bidder": "Geetha",
+        "bidderId": "680b84ae-d8f1-4198-8b52-c0805049aec9",
+        "amount": 152500,
+        "timestamp": 1793197561485,
+        "time": "Just now"
+      },
       "bidHistory": [
         {
           "id": "b-1793197561485-hwsy",
@@ -1922,7 +1928,9 @@
       ],
       "currentBid": 152500,
       "bidCount": 2,
-      "minIncrement": 7500
+      "minIncrement": 7500,
+      "winningBid": 152500,
+      "result": "sold"
     },
     {
       "id": "up-2",
@@ -1945,12 +1953,77 @@
       "startTimestamp": 1793167892859,
       "endTimestamp": 1793427092859,
       "endTime": 1793427092859,
-      "remainingSeconds": 229500,
+      "remainingSeconds": 146696,
       "winner": null,
-      "bidHistory": [],
-      "currentBid": 52000,
+      "bidHistory": [
+        {
+          "id": "b-1793280397236-yox5",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 72000,
+          "time": "Just now",
+          "timestamp": 1793280397236
+        },
+        {
+          "id": "b-1793279749411-jr4y",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 69500,
+          "time": "Just now",
+          "timestamp": 1793279749411
+        },
+        {
+          "id": "b-1793279742586-1u4o",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 67000,
+          "time": "Just now",
+          "timestamp": 1793279742586
+        },
+        {
+          "id": "b-1793279471783-x1y1",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 64500,
+          "time": "Just now",
+          "timestamp": 1793279471783
+        },
+        {
+          "id": "b-1793279436835-kcdt",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 62000,
+          "time": "Just now",
+          "timestamp": 1793279436835
+        },
+        {
+          "id": "b-1793279433704-9h9o",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 59500,
+          "time": "Just now",
+          "timestamp": 1793279433704
+        },
+        {
+          "id": "b-1793279427625-ywif",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 57000,
+          "time": "Just now",
+          "timestamp": 1793279427625
+        },
+        {
+          "id": "b-1793279420468-5xc8",
+          "bidder": "Jyothsna Menezes",
+          "bidderId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+          "amount": 54500,
+          "time": "Just now",
+          "timestamp": 1793279420468
+        }
+      ],
+      "currentBid": 72000,
       "minIncrement": 2500,
-      "bidCount": 0
+      "bidCount": 8
     },
     {
       "id": "up-3",
@@ -1973,7 +2046,7 @@
       "startTimestamp": 1793340692859,
       "endTimestamp": 1793599892859,
       "endTime": 1793599892859,
-      "remainingSeconds": 143100,
+      "remainingSeconds": 60296,
       "winner": null,
       "bidHistory": [],
       "currentBid": 78000,
@@ -2001,7 +2074,7 @@
       "startTimestamp": 1793513492859,
       "endTimestamp": 1793772692859,
       "endTime": 1793772692859,
-      "remainingSeconds": 315900,
+      "remainingSeconds": 233096,
       "winner": null,
       "bidHistory": [],
       "currentBid": 120000,
@@ -2090,6 +2163,18 @@
       "lastBidAmount": 145000,
       "lastBidTime": 1793020412571,
       "aiReasoning": "The proposed bid of ₹145000 is within the authorized maximum bid limit of ₹146000."
+    },
+    {
+      "id": "pb-1793279473528-zc3y",
+      "createdAt": 1793279473528,
+      "updatedAt": 1793279473528,
+      "auctionId": "up-2",
+      "userId": "6cf5cafd-e1cc-4251-80c1-f19368f821ee",
+      "userName": "Jyothsna Menezes",
+      "maxBid": 69500,
+      "preferredIncrement": 2500,
+      "status": "active",
+      "stopReason": null
     }
   ],
   "comments": {
@@ -2153,5 +2238,6 @@
         "timestamp": 1793197577545
       }
     ]
-  }
+  },
+  "payments": []
 }

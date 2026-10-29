@@ -6,9 +6,12 @@ import {
   DEMO_AUCTION_IDS,
   getDemoBaselineAuction,
   getAuthoritativeAuctionWinner,
-  getMeetingAccess
+  getMeetingAccess,
+  DEV_TEST_AUCTION_ID,
+  getDevTestAuction
 } from '../data/auctions';
 import { useToast } from './ToastContext';
+import { useAuth } from './AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getSocket } from '../lib/socket';
 
@@ -22,6 +25,7 @@ const AUCTION_COMMENTS_KEY = 'veyra_auction_comments';
 
 export const AuctionProvider = ({ children }) => {
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   // 1. Base Demo / Live Auctions state
   const [liveAuctions, setLiveAuctions] = useState(() => {
@@ -610,8 +614,15 @@ export const AuctionProvider = ({ children }) => {
 
   // Combined Live Auctions
   const combinedLiveAuctions = useMemo(() => {
-    return [...liveAuctions, ...activeApprovedCustomAuctions];
-  }, [liveAuctions, activeApprovedCustomAuctions]);
+    const list = [...liveAuctions, ...activeApprovedCustomAuctions];
+    if (import.meta.env.DEV && user?.id) {
+      const devAuction = getDevTestAuction(user);
+      if (devAuction && !list.some((a) => a.id === DEV_TEST_AUCTION_ID)) {
+        list.push(devAuction);
+      }
+    }
+    return list;
+  }, [liveAuctions, activeApprovedCustomAuctions, user]);
 
   // Approved upcoming custom auctions
   const upcomingApprovedCustomAuctions = useMemo(() => {
@@ -1490,6 +1501,7 @@ export const AuctionProvider = ({ children }) => {
         resetDemoAuction,
         resetAllDemoAuctions,
         DEMO_AUCTION_IDS,
+        DEV_TEST_AUCTION_ID,
         getAuthoritativeAuctionWinner,
         getMeetingAccess
       }}
