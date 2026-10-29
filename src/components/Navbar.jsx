@@ -24,11 +24,14 @@ import {
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
+import { SearchSuggestionsDropdown } from './SearchSuggestionsDropdown';
 
 export const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isMobileSearchFocused, setIsMobileSearchFocused] = useState(false);
 
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
@@ -37,29 +40,41 @@ export const Navbar = () => {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
-    setIsProfileOpen(false);
-    setIsMobileMenuOpen(false);
+    setProfileDropdownOpen(false);
+    setMobileMenuOpen(false);
     try {
-      await signOut();
+      const res = await signOut();
+      if (res && res.success !== false) {
+        navigate('/');
+      }
     } catch (err) {
       console.warn('Sign out error:', err);
     }
-    navigate('/');
   };
   const location = useLocation();
   const dropdownRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const mobileSearchRef = useRef(null);
 
   // Close menus on route change
   useEffect(() => {
     setMobileMenuOpen(false);
     setProfileDropdownOpen(false);
+    setIsSearchFocused(false);
+    setIsMobileSearchFocused(false);
   }, [location.pathname]);
 
-  // Click outside to close profile dropdown
+  // Click outside to close dropdowns and search suggestions
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setProfileDropdownOpen(false);
+      }
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsSearchFocused(false);
+      }
+      if (mobileSearchRef.current && !mobileSearchRef.current.contains(e.target)) {
+        setIsMobileSearchFocused(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -72,6 +87,8 @@ export const Navbar = () => {
       if (e.key === 'Escape') {
         setMobileMenuOpen(false);
         setProfileDropdownOpen(false);
+        setIsSearchFocused(false);
+        setIsMobileSearchFocused(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -80,6 +97,9 @@ export const Navbar = () => {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
+    setIsSearchFocused(false);
+    setIsMobileSearchFocused(false);
+    setMobileMenuOpen(false);
     const query = searchQuery.trim();
     if (query) {
       navigate(`/shop?search=${encodeURIComponent(query)}`);
@@ -156,11 +176,13 @@ export const Navbar = () => {
 
           {/* Center: Search Bar (Text input + button, no categories dropdown) */}
           <div
+            ref={searchContainerRef}
             className="header-search-container"
             style={{
               flex: '1 1 480px',
               maxWidth: '640px',
-              display: 'block'
+              display: 'block',
+              position: 'relative'
             }}
           >
             <form
@@ -180,7 +202,11 @@ export const Navbar = () => {
                 type="text"
                 placeholder="Search distinctive objects, ceramics, living art, live lots..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchFocused(true);
+                }}
                 style={{
                   flex: 1,
                   height: '42px',
@@ -216,6 +242,16 @@ export const Navbar = () => {
                 <span className="hide-on-mobile">Search</span>
               </button>
             </form>
+
+            <SearchSuggestionsDropdown
+              query={searchQuery}
+              isOpen={isSearchFocused && Boolean(searchQuery && searchQuery.trim())}
+              onClose={() => setIsSearchFocused(false)}
+              onSelectSuggestion={(val) => {
+                setSearchQuery(val);
+                setIsSearchFocused(false);
+              }}
+            />
           </div>
 
           {/* Right: Controls (Schedule, Watchlist, Bag, Profile) */}
@@ -496,7 +532,7 @@ export const Navbar = () => {
                     <div style={{ padding: '6px 0' }}>
                       <Link
                         to="/"
-                        onClick={() => setIsProfileOpen(false)}
+                        onClick={() => setProfileDropdownOpen(false)}
                         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 16px', fontSize: '13px', color: 'var(--text-primary)' }}
                         className="dropdown-item"
                       >
@@ -717,34 +753,54 @@ export const Navbar = () => {
               </div>
 
               {/* Mobile Search */}
-              <form onSubmit={handleSearchSubmit} style={{ marginBottom: '24px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-xs)',
-                    padding: '0 10px',
-                    backgroundColor: 'var(--bg-primary)'
-                  }}
-                >
-                  <Search size={15} color="var(--text-secondary)" />
-                  <input
-                    type="text"
-                    placeholder="Search objects..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+              <div ref={mobileSearchRef} style={{ position: 'relative', marginBottom: '24px' }}>
+                <form onSubmit={handleSearchSubmit}>
+                  <div
                     style={{
-                      border: 'none',
-                      background: 'transparent',
-                      padding: '10px 8px',
-                      fontSize: '13px',
-                      flex: 1,
-                      outline: 'none'
+                      display: 'flex',
+                      alignItems: 'center',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '0 10px',
+                      backgroundColor: 'var(--bg-primary)'
                     }}
-                  />
-                </div>
-              </form>
+                  >
+                    <Search size={15} color="var(--text-secondary)" />
+                    <input
+                      type="text"
+                      placeholder="Search objects..."
+                      value={searchQuery}
+                      onFocus={() => setIsMobileSearchFocused(true)}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setIsMobileSearchFocused(true);
+                      }}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        padding: '10px 8px',
+                        fontSize: '13px',
+                        flex: 1,
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </form>
+
+                <SearchSuggestionsDropdown
+                  query={searchQuery}
+                  isOpen={isMobileSearchFocused && Boolean(searchQuery && searchQuery.trim())}
+                  onClose={() => {
+                    setIsMobileSearchFocused(false);
+                    setMobileMenuOpen(false);
+                  }}
+                  onSelectSuggestion={(val) => {
+                    setSearchQuery(val);
+                    setIsMobileSearchFocused(false);
+                    setMobileMenuOpen(false);
+                  }}
+                />
+              </div>
 
               {/* Navigation Items */}
               <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

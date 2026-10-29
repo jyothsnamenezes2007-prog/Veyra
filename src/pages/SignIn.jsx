@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { ArrowRight, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, ArrowLeft, Check, Mail } from 'lucide-react';
 
 export const SignIn = () => {
-  const { signIn, signInWithGoogle } = useAuth();
+  const { user, signIn, signInWithGoogle, resendConfirmationEmail } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -17,30 +17,99 @@ export const SignIn = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState('');
+  const [isResending, setIsResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState('');
+  const [confirmationNotice, setConfirmationNotice] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If user is already authenticated, redirect
+  useEffect(() => {
+    if (user) {
+      navigate(redirectPath, { replace: true });
+    }
+  }, [user, navigate, redirectPath]);
+
+  // Inspect URL parameters and hash fragment for confirmation status or auth errors
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const hash = window.location.hash.startsWith('#')
+      ? window.location.hash.substring(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hash);
+
+    if (searchParams.get('confirmed') === 'true' || hashParams.get('type') === 'signup') {
+      setConfirmationNotice('Your email has been successfully confirmed. You can now sign in.');
+    }
+
+    const errorDesc =
+      hashParams.get('error_description') ||
+      searchParams.get('error_description') ||
+      hashParams.get('error');
+
+    if (errorDesc) {
+      const decoded = decodeURIComponent(errorDesc).replace(/\+/g, ' ');
+      if (decoded.toLowerCase().includes('expired') || decoded.toLowerCase().includes('invalid')) {
+        setError('The confirmation link is invalid or has expired. You can request a new verification email below.');
+      } else {
+        setError(decoded);
+      }
+    }
+  }, [location.search]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    if (isSubmitting) return;
 
-    if (!email || !password) {
+    setError('');
+    setResendSuccess('');
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
       setError('Please provide both your email and password.');
       return;
     }
 
     setIsSubmitting(true);
-    const res = await signIn(email, password);
+    const res = await signIn(cleanEmail, password);
     setIsSubmitting(false);
 
     if (res.success) {
       navigate(redirectPath);
     } else {
       setError(res.error || 'Authentication failed. Please verify your credentials.');
+      if (res.isUnconfirmed) {
+        setUnconfirmedEmail(res.email || cleanEmail);
+      } else {
+        setUnconfirmedEmail('');
+      }
+    }
+  };
+
+  const handleResend = async () => {
+    const emailToSend = (unconfirmedEmail || email).trim();
+    if (!emailToSend) {
+      setError('Please provide your email address to resend verification.');
+      return;
+    }
+
+    setIsResending(true);
+    setResendSuccess('');
+    setError('');
+
+    const res = await resendConfirmationEmail(emailToSend);
+    setIsResending(false);
+
+    if (res.success) {
+      setResendSuccess(`A new confirmation email has been dispatched to ${emailToSend}. Please check your inbox and spam folder.`);
+    } else {
+      setError(res.error || 'Failed to resend confirmation email. Please try again.');
     }
   };
 
   const handleGoogleClick = async () => {
     setError('');
+    setUnconfirmedEmail('');
     const res = await signInWithGoogle();
     if (!res.success && res.error) {
       setError(res.error);
@@ -91,6 +160,78 @@ export const SignIn = () => {
           </p>
         </div>
 
+        {/* Confirmation Status Banner */}
+        {confirmationNotice && (
+          <div
+            style={{
+              backgroundColor: 'var(--badge-shipping-bg, #edf7ee)',
+              border: '1px solid #b8d9c2',
+              color: 'var(--badge-shipping-text, #276738)',
+              borderRadius: 'var(--radius-xs)',
+              padding: '12px 16px',
+              marginBottom: '20px',
+              fontSize: 'var(--text-xs)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              lineHeight: 1.45
+            }}
+          >
+            <Check size={16} style={{ flexShrink: 0 }} />
+            <span>{confirmationNotice}</span>
+          </div>
+        )}
+
+        {/* Unconfirmed Account Alert Banner */}
+        {unconfirmedEmail && (
+          <div
+            style={{
+              backgroundColor: '#faf8f5',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-xs)',
+              padding: '16px',
+              marginBottom: '20px',
+              textAlign: 'left'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <Mail size={18} color="var(--accent-burgundy)" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ flex: 1 }}>
+                <h4 style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', marginBottom: '4px', fontWeight: 600 }}>
+                  Email Verification Required
+                </h4>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '10px', lineHeight: 1.45 }}>
+                  A confirmation link was sent to <strong>{unconfirmedEmail}</strong>. Please check your inbox (and spam folder) to activate your account before signing in.
+                </p>
+                {resendSuccess ? (
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--success-color, #276738)', fontWeight: 500, margin: 0 }}>
+                    {resendSuccess}
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isResending}
+                    onClick={handleResend}
+                    style={{
+                      fontSize: 'var(--text-xs)',
+                      color: 'var(--accent-burgundy)',
+                      textDecoration: 'underline',
+                      fontWeight: 600,
+                      cursor: isResending ? 'not-allowed' : 'pointer',
+                      padding: 0,
+                      background: 'none',
+                      border: 'none',
+                      display: 'inline-block'
+                    }}
+                  >
+                    {isResending ? 'Sending confirmation email...' : 'Resend confirmation email'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Sign In Form */}
         <form
           onSubmit={handleSubmit}
@@ -108,7 +249,9 @@ export const SignIn = () => {
             </label>
             <input
               id="email-input"
+              name="email"
               type="email"
+              autoComplete="email"
               className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -133,7 +276,9 @@ export const SignIn = () => {
             <div style={{ position: 'relative' }}>
               <input
                 id="password-input"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 className="form-input"
                 style={{ paddingRight: '40px' }}
                 value={password}
@@ -152,7 +297,10 @@ export const SignIn = () => {
                   color: 'var(--text-secondary)',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer'
                 }}
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

@@ -75,13 +75,37 @@ export const Explore = () => {
     // Search filter
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(term) ||
-          p.seller.toLowerCase().includes(term) ||
-          p.description.toLowerCase().includes(term) ||
-          p.category.toLowerCase().includes(term)
-      );
+      const words = term.split(/\s+/).filter(Boolean);
+      result = result.filter((p) => {
+        const searchable = [
+          p.name,
+          p.title,
+          p.seller,
+          p.sellerName,
+          p.description,
+          p.category,
+          p.materials,
+          p.location
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        if (searchable.includes(term)) return true;
+
+        return words.every((w) => {
+          if (searchable.includes(w)) return true;
+          if (w === 'wooden' && searchable.includes('wood')) return true;
+          if (w === 'wood' && searchable.includes('wooden')) return true;
+          if (
+            w === 'vintage' &&
+            (searchable.includes('vintage') || searchable.includes('archival') || searchable.includes('c. 19'))
+          ) {
+            return true;
+          }
+          return false;
+        });
+      });
     }
 
     // Price range filter

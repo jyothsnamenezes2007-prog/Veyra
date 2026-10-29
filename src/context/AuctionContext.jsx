@@ -419,6 +419,11 @@ export const AuctionProvider = ({ children }) => {
             const exists = prev.some((a) => a.id === auction.id);
             return exists ? prev : [auction, ...prev];
           });
+        } else if (type === 'PRODUCT_DELETED') {
+          const { productId } = payload || {};
+          if (productId) {
+            setCustomAuctions((prev) => prev.filter((a) => a.id !== productId && a.productId !== productId));
+          }
         } else if (type === 'PROXY_BID_PLACED') {
           const { bid, auctionId } = payload;
           addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
@@ -714,20 +719,20 @@ export const AuctionProvider = ({ children }) => {
           body: JSON.stringify(payload)
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.auction) {
-            setCustomAuctions((prev) => [data.auction, ...prev.filter((a) => a.id !== data.auction.id)]);
-            addToast(`"${data.auction.name}" submitted successfully for curator approval.`);
-            return { success: true, auction: data.auction };
-          }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return { success: false, error: data.error || `Server error (${res.status})` };
         }
+        const data = await res.json();
+        if (data.success && data.auction) {
+          setCustomAuctions((prev) => [data.auction, ...prev.filter((a) => a.id !== data.auction.id)]);
+          addToast(`"${data.auction.name}" submitted successfully for curator approval.`);
+          return { success: true, auction: data.auction };
+        }
+        return { success: false, error: data.error || 'Failed to register auction lot.' };
       } catch (e) {
-        // Fallback to local store if server offline
+        return { success: false, error: e.message || 'Network connection failed.' };
       }
-
-      // Local fallback creation
-      const endsInSeconds = Math.max(0, Math.floor((endTimestamp - startTimestamp) / 1000));
       const primaryImage = lotData.image || (lotData.images && lotData.images[0]) || '';
       const imagesList = lotData.images && lotData.images.length > 0 ? lotData.images : [primaryImage];
 

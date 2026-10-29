@@ -116,6 +116,14 @@ export const Sell = () => {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedData, setSubmittedData] = useState(null);
+  const submissionTokenRef = useRef('sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+  const successRef = useRef(null);
+
+  useEffect(() => {
+    if (submittedData && successRef.current) {
+      successRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [submittedData]);
 
   // Keep seller updated if user profile loads asynchronously
   useEffect(() => {
@@ -237,6 +245,7 @@ export const Sell = () => {
   // Main Form Submission Handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError('');
 
     // 1. Authentication check
@@ -343,6 +352,7 @@ export const Sell = () => {
       if (sellingOption === 'shop') {
         // Normal Shop Product
         const productPayload = {
+          clientSubmissionId: submissionTokenRef.current,
           name: formData.name.trim(),
           seller: formData.seller.trim(),
           sellerId: user.id,
@@ -361,6 +371,7 @@ export const Sell = () => {
         };
 
         const createdProduct = await addProduct(productPayload);
+        submissionTokenRef.current = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         setSubmittedData({
           product: createdProduct,
           auction: null,
@@ -369,6 +380,7 @@ export const Sell = () => {
       } else {
         // Live Auction Lot
         const auctionPayload = {
+          clientSubmissionId: submissionTokenRef.current,
           name: formData.name.trim(),
           seller: formData.seller.trim(),
           maker: formData.seller.trim(),
@@ -404,6 +416,7 @@ export const Sell = () => {
           throw new Error(outcome.error || 'Failed to register auction lot with scheduler.');
         }
 
+        submissionTokenRef.current = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         setSubmittedData({
           product: outcome.auction,
           auction: outcome.auction,
@@ -422,6 +435,7 @@ export const Sell = () => {
     setSubmittedData(null);
     setFormError('');
     setImageError('');
+    submissionTokenRef.current = 'sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
     setFormData((prev) => ({
       ...prev,
       name: '',
@@ -504,56 +518,6 @@ export const Sell = () => {
               <span>Sign In to Atelier</span>
               <ArrowRight size={14} />
             </Link>
-          </div>
-        )}
-
-        {/* Success Confirmation Card */}
-        {submittedData && (
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              border: '1.5px solid var(--accent-burgundy)',
-              borderRadius: 'var(--radius-xs)',
-              padding: '28px 32px',
-              marginBottom: '36px',
-              boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
-            }}
-          >
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-              <CheckCircle2 size={28} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
-                  {submittedData.sellingOption === 'auction'
-                    ? 'Live Auction Lot Submitted for Approval!'
-                    : 'Shop Product Submitted for Approval!'}
-                </h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 18px 0' }}>
-                  <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
-                  <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
-                    {submittedData.sellingOption}
-                  </code>{' '}
-                  and queued for curator review with status{' '}
-                  <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
-                  {submittedData.sellingOption === 'auction'
-                    ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
-                    : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
-                </p>
-
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
-                    <Store size={15} />
-                    <span>View in Seller Dashboard</span>
-                  </Link>
-                  <button
-                    onClick={handleResetForm}
-                    className="btn btn-secondary"
-                    style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
-                  >
-                    <span>Submit Another Item</span>
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -1322,6 +1286,58 @@ export const Sell = () => {
               </button>
             </div>
           </form>
+
+          {/* Success Confirmation Card (rendered below the form upon successful backend persistence) */}
+          {submittedData && (
+            <div
+              ref={successRef}
+              style={{
+                backgroundColor: '#FFFFFF',
+                border: '1.5px solid var(--accent-burgundy)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '28px 32px',
+                marginTop: '28px',
+                boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
+              }}
+            >
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <CheckCircle2 size={28} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
+                    {submittedData.sellingOption === 'auction'
+                      ? 'Live Auction Lot Submitted for Approval!'
+                      : 'Shop Product Submitted for Approval!'}
+                  </h3>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 18px 0' }}>
+                    <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
+                    <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                      {submittedData.sellingOption}
+                    </code>{' '}
+                    and queued for curator review with status{' '}
+                    <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
+                    {submittedData.sellingOption === 'auction'
+                      ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
+                      : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
+                      <Store size={15} />
+                      <span>View in Seller Dashboard</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      className="btn btn-secondary"
+                      style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
+                    >
+                      <span>Submit Another Item</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* RIGHT COLUMN: Live Visual Preview Card */}
           <div style={{ position: 'sticky', top: '100px' }}>

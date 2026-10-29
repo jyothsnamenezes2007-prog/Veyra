@@ -1,17 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Read Supabase environment variables from Vite
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabasePublishableKey =
+const rawUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseUrl = rawUrl ? rawUrl.trim().replace(/\/+$/, '') : '';
+const supabasePublishableKey = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY;
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  ''
+).trim();
 
 // Check if credentials have been entered in .env.local
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
   supabasePublishableKey &&
-  supabaseUrl.trim() !== '' &&
-  supabasePublishableKey.trim() !== '' &&
+  supabaseUrl !== '' &&
+  supabasePublishableKey !== '' &&
   supabaseUrl.startsWith('http')
 );
 

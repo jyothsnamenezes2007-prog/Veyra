@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
+import { SearchSuggestionsDropdown } from './SearchSuggestionsDropdown';
 
 export const SearchBar = ({
   value,
@@ -7,12 +8,30 @@ export const SearchBar = ({
   onSubmit,
   placeholder = 'Search by object, maker, or medium...',
   maxWidth = '460px',
-  autoFocus = false
+  autoFocus = false,
+  showSuggestions = true
 }) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   return (
     <form
+      ref={containerRef}
       onSubmit={(e) => {
         e.preventDefault();
+        setIsFocused(false);
         if (onSubmit) onSubmit(value);
       }}
       style={{
@@ -25,7 +44,11 @@ export const SearchBar = ({
         type="text"
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setIsFocused(true);
+        }}
+        onFocus={() => setIsFocused(true)}
         autoFocus={autoFocus}
         style={{
           width: '100%',
@@ -50,7 +73,10 @@ export const SearchBar = ({
       {value && (
         <button
           type="button"
-          onClick={() => onChange('')}
+          onClick={() => {
+            onChange('');
+            setIsFocused(false);
+          }}
           aria-label="Clear search input"
           style={{
             position: 'absolute',
@@ -60,11 +86,26 @@ export const SearchBar = ({
             padding: '2px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer'
           }}
         >
           <X size={16} />
         </button>
+      )}
+
+      {showSuggestions && (
+        <SearchSuggestionsDropdown
+          query={value}
+          isOpen={isFocused && Boolean(value && value.trim())}
+          onClose={() => setIsFocused(false)}
+          onSelectSuggestion={(selected) => {
+            onChange(selected);
+            setIsFocused(false);
+          }}
+        />
       )}
     </form>
   );

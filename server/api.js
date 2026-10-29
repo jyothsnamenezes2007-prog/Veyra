@@ -9,6 +9,7 @@ import {
   insertProduct,
   updateProduct,
   deleteProduct,
+  deleteCustomAuction,
   saveDatabase,
   getProxyConfigs,
   getProxyConfigByUser,
@@ -48,6 +49,17 @@ async function withAuctionLock(auctionId, fn) {
     release();
     if (auctionLocks.get(auctionId) === currentPromise) {
       auctionLocks.delete(auctionId);
+    }
+  }
+}
+
+// Duplicate submission protection cache (idempotency token & rapid submission de-bounce)
+const recentSubmissions = new Map();
+function cleanRecentSubmissions() {
+  const now = Date.now();
+  for (const [k, v] of recentSubmissions.entries()) {
+    if (now - v.timestamp > 30000) {
+      recentSubmissions.delete(k);
     }
   }
 }
@@ -195,6 +207,24 @@ export async function handleApiRequest(req, res) {
         return true;
       }
 
+      cleanRecentSubmissions();
+
+      // Check clientSubmissionId idempotency
+      const clientSubmissionId = data.clientSubmissionId || data.submissionId;
+      if (clientSubmissionId && recentSubmissions.has(clientSubmissionId)) {
+        const cached = recentSubmissions.get(clientSubmissionId);
+        sendJson(res, 200, { success: true, auction: cached.auction, duplicatePrevented: true });
+        return true;
+      }
+
+      // Check rapid double-click duplicate (same seller, title, startingBid within 4 seconds)
+      const rapidKey = `auc_${data.sellerId || data.seller}_${data.name.trim().toLowerCase()}_${startingBid}`;
+      const recentMatch = recentSubmissions.get(rapidKey);
+      if (recentMatch && Date.now() - recentMatch.timestamp < 4000) {
+        sendJson(res, 200, { success: true, auction: recentMatch.auction, duplicatePrevented: true });
+        return true;
+      }
+
       const estimatedValue = Number(data.estimatedValue || data.price || startingBid);
 
       // Parse start and end timestamps
@@ -319,6 +349,11 @@ export async function handleApiRequest(req, res) {
 
       insertAuction(newAuction);
       insertProduct(newProduct);
+
+      if (clientSubmissionId) {
+        recentSubmissions.set(clientSubmissionId, { timestamp: Date.now(), auction: newAuction });
+      }
+      recentSubmissions.set(rapidKey, { timestamp: Date.now(), auction: newAuction });
 
       broadcastSSE('AUCTION_CREATED', { auction: newAuction, product: newProduct });
       sendJson(res, 201, { success: true, auction: newAuction, product: newProduct });
@@ -1152,6 +1187,24 @@ export async function handleApiRequest(req, res) {
         return true;
       }
 
+      cleanRecentSubmissions();
+
+      // Check clientSubmissionId idempotency
+      const clientSubmissionId = data.clientSubmissionId || data.submissionId;
+      if (clientSubmissionId && recentSubmissions.has(clientSubmissionId)) {
+        const cached = recentSubmissions.get(clientSubmissionId);
+        sendJson(res, 200, { success: true, product: cached.product, duplicatePrevented: true });
+        return true;
+      }
+
+      // Check rapid double-click duplicate (same seller, title, price within 4 seconds)
+      const rapidKey = `prod_${data.sellerId || data.seller}_${data.name.trim().toLowerCase()}_${price}`;
+      const recentMatch = recentSubmissions.get(rapidKey);
+      if (recentMatch && Date.now() - recentMatch.timestamp < 4000) {
+        sendJson(res, 200, { success: true, product: recentMatch.product, duplicatePrevented: true });
+        return true;
+      }
+
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
 
@@ -1180,6 +1233,11 @@ export async function handleApiRequest(req, res) {
       };
 
       insertProduct(newProduct);
+
+      if (clientSubmissionId) {
+        recentSubmissions.set(clientSubmissionId, { timestamp: Date.now(), product: newProduct });
+      }
+      recentSubmissions.set(rapidKey, { timestamp: Date.now(), product: newProduct });
 
       broadcastSSE('PRODUCT_CREATED', { product: newProduct });
       sendJson(res, 201, { success: true, product: newProduct });
@@ -1226,9 +1284,26 @@ export async function handleApiRequest(req, res) {
   const prodDeleteMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)(?:\/delete)?$/);
   if (prodDeleteMatch && (method === 'DELETE' || (method === 'POST' && pathname.endsWith('/delete')))) {
     const id = prodDeleteMatch[1];
-    const product = getProductById(id);
+
+    // CRITICAL SAFETY CHECK: NEVER allow deletion of real production auctions
+    if (id === 'auc-1' || id === 'up-2' || id === 'auc-dev-test') {
+      sendJson(res, 403, { success: false, error: 'Cannot delete protected live auction records.' });
+      return true;
+    }
+
+    let product = getProductById(id);
+    let isAuctionRecord = false;
     if (!product) {
-      sendJson(res, 404, { success: false, error: 'Product not found.' });
+      const auctions = getAuctions();
+      const matched = auctions.find((a) => a.id === id || a.productId === id);
+      if (matched) {
+        product = matched;
+        isAuctionRecord = true;
+      }
+    }
+
+    if (!product) {
+      sendJson(res, 404, { success: false, error: 'Product or listing not found.' });
       return true;
     }
 
@@ -1244,7 +1319,7 @@ export async function handleApiRequest(req, res) {
     const isOwner = Boolean(
       (userId && product.sellerId && String(product.sellerId) === String(userId)) ||
       (userName && product.seller && product.seller.toLowerCase().trim() === userName.toLowerCase().trim()) ||
-      (!product.sellerId && !userId)
+      (userName && product.maker && product.maker.toLowerCase().trim() === userName.toLowerCase().trim())
     );
 
     if (!isOwner) {
@@ -1263,9 +1338,16 @@ export async function handleApiRequest(req, res) {
     }
 
     // Perform safe deletion (historical auctions, bids, and orders remain intact)
-    const removed = deleteProduct(id);
+    const removedProduct = deleteProduct(id);
+    const removedAuction = deleteCustomAuction(id);
+    broadcastRealtimeEvent('PRODUCT_DELETED', { productId: id });
     broadcastSSE('PRODUCT_DELETED', { productId: id });
-    sendJson(res, 200, { success: true, message: 'Product successfully deleted.', productId: id, removed });
+    sendJson(res, 200, {
+      success: true,
+      message: 'Product successfully deleted.',
+      productId: id,
+      removed: removedProduct || removedAuction
+    });
     return true;
   }
 
