@@ -401,3 +401,71 @@ export const getMeetingAccess = (auction, currentUser) => {
     reason: 'Meeting is restricted to the verified winning buyer and authenticated seller.'
   };
 };
+
+// ─── Development-Only Isolated Test Auction Helper ────────────────────────────
+export const DEV_TEST_AUCTION_ID = 'auc-dev-test';
+
+export const getDevTestAuction = (currentUser) => {
+  // Enforce dev-only gate: strictly unavailable in production
+  if (typeof import.meta !== 'undefined' && import.meta.env && !import.meta.env.DEV) {
+    return null;
+  }
+  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production') {
+    return null;
+  }
+
+  // Obtain authenticated user credentials dynamically (no hardcoded UUID)
+  const userId = currentUser?.id || 'dev-authenticated-collector';
+  const userName =
+    (currentUser?.name && currentUser.name !== 'Complete your profile'
+      ? currentUser.name
+      : null) ||
+    currentUser?.username ||
+    currentUser?.displayName ||
+    currentUser?.email ||
+    'Authenticated Collector';
+
+  return {
+    id: DEV_TEST_AUCTION_ID,
+    productId: 'prod-dev-test-100',
+    name: '[DEV TEST ONLY] Post-Auction Consultation Lot',
+    category: 'Development Testing',
+    maker: 'Veyra Artisan Atelier',
+    seller: 'Veyra Artisan Atelier',
+    sellerId: 'seller-atelier-1',
+    description: 'Isolated development-only test auction for verifying WebRTC post-call consultation and Razorpay payment flow.',
+    image: 'https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80',
+    type: 'auction',
+    isAuction: true,
+    status: 'ended',
+    approvalStatus: 'approved',
+    startingBid: 100,
+    currentBid: 100,
+    winningBid: 100,
+    minIncrement: 50,
+    bidCount: 1,
+    remainingSeconds: 0,
+    startTimestamp: Date.now() - 7200000,
+    endTimestamp: Date.now() - 3600000,
+    endTime: Date.now() - 3600000,
+    paymentStatus: 'pending',
+    isDevTest: true,
+    winner: {
+      bidder: userName,
+      bidderId: userId,
+      amount: 100,
+      time: 'Just now',
+      timestamp: Date.now() - 3600000
+    },
+    bidHistory: [
+      {
+        id: 'b-dev-test-1',
+        bidder: userName,
+        bidderId: userId,
+        amount: 100,
+        time: 'Just now',
+        timestamp: Date.now() - 3600000
+      }
+    ]
+  };
+};

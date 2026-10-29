@@ -215,20 +215,72 @@ export const AuthProvider = ({ children }) => {
       return { success: false, error: 'Please enter both email and password.' };
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim();
+    const normalizedEmail = cleanEmail.toLowerCase();
 
     if (isSupabaseConfigured && supabase) {
       setLoading(true);
-      const { data, error } = await supabase.auth.signInWithPassword({
+      let authResponse = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password
       });
-      setLoading(false);
 
-      if (error) {
-        return { success: false, error: error.message };
+      // If lower-case attempt failed with invalid credentials and original email had mixed case,
+      // retry with the original cleanEmail
+      if (
+        authResponse.error &&
+        cleanEmail !== normalizedEmail &&
+        authResponse.error.message?.toLowerCase().includes('invalid login credentials')
+      ) {
+        const retryResponse = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password
+        });
+        if (!retryResponse.error) {
+          authResponse = retryResponse;
+        }
       }
 
+      setLoading(false);
+
+      if (authResponse.error) {
+        const msg = authResponse.error.message || '';
+        const isNetworkError =
+          authResponse.error.status === 0 ||
+          msg.toLowerCase().includes('fetch failed') ||
+          msg.toLowerCase().includes('network');
+
+        if (isNetworkError) {
+          return {
+            success: false,
+            error: 'Network connection error. Please check your internet connection and try again.'
+          };
+        }
+
+        const isUnconfirmed =
+          authResponse.error.code === 'email_not_confirmed' ||
+          msg.toLowerCase().includes('email not confirmed');
+
+        if (isUnconfirmed) {
+          return {
+            success: false,
+            isUnconfirmed: true,
+            email: cleanEmail,
+            error: 'Your email address has not been confirmed yet. Please verify your email before signing in.'
+          };
+        }
+
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          return {
+            success: false,
+            error: 'Invalid email or password. Please verify your credentials and try again.'
+          };
+        }
+
+        return { success: false, error: msg || 'Authentication failed. Please verify your credentials.' };
+      }
+
+      const { data } = authResponse;
       const appUser = mapSupabaseUser(data.user);
       setUser(appUser);
       setSession(data.session);
@@ -319,7 +371,8 @@ export const AuthProvider = ({ children }) => {
     }
 
     const trimmedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
+    const cleanEmail = email.trim();
+    const normalizedEmail = cleanEmail.toLowerCase();
     const newUserId = 'usr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
     // Save full name directly into persistent user database
@@ -344,6 +397,7 @@ export const AuthProvider = ({ children }) => {
         email: normalizedEmail,
         password,
         options: {
+          emailRedirectTo: `${window.location.origin}/signin?confirmed=true`,
           data: {
             full_name: trimmedName,
             name: trimmedName,
@@ -355,7 +409,21 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
 
       if (error) {
+        if (error.status === 429 || error.message?.toLowerCase().includes('rate limit')) {
+          return {
+            success: false,
+            error: 'Email rate limit reached. Please wait a few minutes before trying again.'
+          };
+        }
         return { success: false, error: error.message };
+      }
+
+      // Check if user already exists (Supabase enumeration protection returns empty identities array)
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        return {
+          success: false,
+          error: 'An account with this email address already exists. Please sign in instead.'
+        };
       }
 
       if (data.user?.id) {
@@ -369,6 +437,7 @@ export const AuthProvider = ({ children }) => {
         return {
           success: true,
           needsEmailConfirmation: true,
+          email: cleanEmail,
           message: 'Please check your email to confirm your account.'
         };
       }
@@ -486,15 +555,23 @@ export const AuthProvider = ({ children }) => {
   const signOut = async () => {
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.warn('Supabase signOut error:', error);
+          addToast(error.message || 'Failed to sign out from authentication service.', 'error');
+          return { success: false, error: error.message };
+        }
       } catch (e) {
         console.warn('Supabase signOut error:', e);
+        addToast(e.message || 'Failed to sign out.', 'error');
+        return { success: false, error: e.message };
       }
     }
     setUser(null);
     setSession(null);
     localStorage.removeItem(DEMO_USER_STORAGE_KEY);
     addToast('Signed out successfully.');
+    return { success: true };
   };
 
   // Request password reset email
@@ -622,6 +699,38 @@ export const AuthProvider = ({ children }) => {
     return { success: true };
   };
 
+  // Resend confirmation email for unconfirmed accounts
+  const resendConfirmationEmail = async (email) => {
+    if (!email || !email.trim()) {
+      return { success: false, error: 'Please enter your email address.' };
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: cleanEmail,
+          options: {
+            emailRedirectTo: `${window.location.origin}/signin?confirmed=true`
+          }
+        });
+        if (error) {
+          if (error.status === 429 || error.message?.toLowerCase().includes('rate limit')) {
+            return {
+              success: false,
+              error: 'Verification email rate limit reached. Please check your spam folder or wait a few minutes before requesting another.'
+            };
+          }
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message || 'Failed to resend confirmation email.' };
+      }
+    }
+    return { success: false, error: 'Authentication service not configured.' };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -632,6 +741,7 @@ export const AuthProvider = ({ children }) => {
         signIn,
         signUp,
         signInWithGoogle,
+        resendConfirmationEmail,
         sendPasswordResetEmail,
         verifyResetToken,
         resetPassword,

@@ -23,8 +23,9 @@ import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../context/ToastContext';
+import { joinAuctionRoom, leaveAuctionRoom } from '../lib/socket';
 import { formatINR } from '../data/products';
-import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
+import { getMeetingAccess, getAuthoritativeAuctionWinner, DEV_TEST_AUCTION_ID, getDevTestAuction } from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
@@ -92,7 +93,9 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
   }, []);
 
   // Find authoritative auction
-  const auction = liveAuctions.find((a) => a.id === id || a.productId === id) || liveAuctions[0];
+  const auction =
+    liveAuctions.find((a) => a.id === id || a.productId === id) ||
+    (import.meta.env.DEV && id === DEV_TEST_AUCTION_ID ? getDevTestAuction(user) : liveAuctions[0]);
 
   const currentBid = typeof auction?.currentBid === 'number' && !isNaN(auction.currentBid)
     ? auction.currentBid
@@ -125,10 +128,16 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
     }
   }, [minRequiredBid]);
 
-  // Synchronize floor comments from authoritative backend
+  // Synchronize floor comments from authoritative backend & join targeted Socket.IO room
   useEffect(() => {
-    if (auction?.id && fetchAuctionComments) {
-      fetchAuctionComments(auction.id);
+    if (auction?.id) {
+      if (fetchAuctionComments) {
+        fetchAuctionComments(auction.id);
+      }
+      joinAuctionRoom(auction.id);
+      return () => {
+        leaveAuctionRoom(auction.id);
+      };
     }
   }, [auction?.id, fetchAuctionComments]);
 

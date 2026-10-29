@@ -43,7 +43,7 @@ export const WhyVeyra = () => {
             Why Veyra?
           </h2>
           <p style={{ fontSize: 'var(--text-base)', color: 'var(--text-secondary)' }}>
-            A commerce platform designed around intention, human craft, and the quiet pleasure of living with extraordinary objects.
+            An interactive auction and bidding marketplace connecting collectors with independent sellers through extraordinary objects, live auctions, and real-time bidding.
           </p>
         </div>
 
