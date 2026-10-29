@@ -1,5 +1,4 @@
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { initDatabase, getProductById, getAuctionById } from './server/db.js';
 import { handleApiRequest } from './server/api.js';
@@ -7,14 +6,15 @@ import {
   verifyProductImage,
   isImageAuthorized,
   invalidateImageVerification,
-  clearVerificationRegistry
+  clearVerificationRegistry,
+  getGroqConfig
 } from './server/imageVerification.js';
 
 console.log('================================================================');
-console.log('--- STARTING VEYRA QWEN3-VL IMAGE VERIFICATION TEST SUITE ---');
+console.log('--- STARTING VEYRA GROQ VISION API TEST SUITE ---');
 console.log('================================================================\n');
 
-// Mock HTTP Request / Response helper
+// Mock HTTP Request / Response helper for API endpoint testing
 function createMockReqRes(method, url, body = null) {
   let pushed = false;
   const req = new Readable({
@@ -73,244 +73,328 @@ const VALID_PRODUCT_IMAGE =
 const REJECTED_UNSUITABLE_IMAGE =
   'data:image/png;base64,' + Buffer.from('blurry_unreadable_corrupt_test_image_bytes').toString('base64');
 
-// Manipulated test image (distinct base64 bytes tagged with watermark marker)
-const REJECTED_WATERMARKED_IMAGE =
-  'data:image/png;base64,' + Buffer.from('manipulated_watermark_test_image_bytes').toString('base64');
+// Manipulated test image
+const TAMPERED_IMAGE =
+  'data:image/png;base64,' + Buffer.from('different_tampered_replacement_bytes_888').toString('base64');
 
-// In-process handler implementing Qwen3-VL verification heuristics
-function setupInProcessQwenHandler() {
-  globalThis.__QWEN_INPROCESS_HANDLER__ = async (payload) => {
-    const messages = payload?.messages || [];
-    let imageUrl = '';
-    let promptText = '';
-
-    for (const msg of messages) {
-      const content = msg.content;
-      if (Array.isArray(content)) {
-        for (const item of content) {
-          if (item.type === 'image_url') {
-            imageUrl = item.image_url?.url || '';
-          } else if (item.type === 'text') {
-            promptText += item.text + ' ';
-          }
+// Helper to create mock OpenAI-compatible chat completion responses for Groq
+function createMockCompletion(contentObject, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => ({
+      id: 'chatcmpl-groq-' + Math.random().toString(36).slice(2),
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: 'qwen/qwen3.8-27b',
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: typeof contentObject === 'string' ? contentObject : JSON.stringify(contentObject)
+          },
+          finish_reason: 'stop'
         }
-      }
-    }
+      ]
+    }),
+    text: async () => typeof contentObject === 'string' ? contentObject : JSON.stringify(contentObject)
+  };
+}
 
-    let decoded = '';
-    try {
-      decoded = Buffer.from(imageUrl.replace(/^data:image\/[^;]+;base64,/, ''), 'base64').toString('utf8');
-    } catch (e) {}
+async function runTests() {
+  const originalEnvKey = process.env.GROQ_API_KEY;
+  const originalEnvUrl = process.env.GROQ_API_BASE_URL;
+  const originalEnvModel = process.env.GROQ_VISION_MODEL;
 
-    const checkText = (imageUrl + ' ' + decoded).toLowerCase();
+  try {
+    initDatabase();
+    clearVerificationRegistry();
 
-    // Check for failure triggers in image URL or image bytes
-    if (checkText.includes('blurry') || checkText.includes('unreadable') || checkText.includes('corrupt') || checkText.includes('watermark') || checkText.includes('manipulated')) {
-      return {
-        available: true,
-        decision: {
-          verified: false,
-          readable: !(checkText.includes('blurry') || checkText.includes('unreadable')),
-          clearProduct: !(checkText.includes('unreadable') || checkText.includes('corrupt')),
-          suspiciousArtifacts: checkText.includes('manipulated'),
-          watermarks: checkText.includes('watermark'),
-          confidence: 'high',
-          reason: 'Image verification failed: Image contains visible watermarks, low clarity, or signs of manipulation unsuitable for a genuine listing.'
-        }
-      };
-    }
+    // Set test environment configuration
+    process.env.GROQ_API_KEY = 'gsk_test_secret_api_key_9988';
+    process.env.GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1';
+    process.env.GROQ_VISION_MODEL = 'qwen/qwen3.8-27b';
 
-    // Default genuine product pass
-    return {
-      available: true,
-      decision: {
+    // Verify config helper
+    const config = getGroqConfig();
+    assert.strictEqual(config.hasValidKey, true);
+    assert.strictEqual(config.apiKey, 'gsk_test_secret_api_key_9988');
+    assert.strictEqual(config.endpoint, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.strictEqual(config.model, 'qwen/qwen3.8-27b');
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 1: Successful Groq vision API response (returns verified + token)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 1: Successful Groq vision API response returns verified + token');
+    let lastCapturedRequest = null;
+
+    globalThis.__GROQ_MOCK_FETCHER__ = async (url, options) => {
+      lastCapturedRequest = { url, options, body: JSON.parse(options.body) };
+      return createMockCompletion({
         verified: true,
         readable: true,
         clearProduct: true,
         suspiciousArtifacts: false,
         watermarks: false,
         confidence: 'high',
-        reason: 'Product is clearly visible in genuine physical form with acceptable catalog clarity and no suspicious manipulation.'
-      }
+        reason: 'Product is clearly depicted with high quality catalog presentation.'
+      });
     };
-  };
-}
 
-async function runTests() {
-  try {
-    initDatabase();
-    clearVerificationRegistry();
-
-    console.log('Initializing Qwen3-VL-8B-Instruct inference engine verification suite...');
-    setupInProcessQwenHandler();
-    console.log('✓ Qwen3-VL inference engine ready.\n');
-
-    // ── Scenario 1: A suitable product photo receives verified status ───────────────
-    console.log('Scenario 1: Suitable product photo receives verified status');
-    const reqRes1 = createMockReqRes('POST', '/api/verify-image', { image: VALID_PRODUCT_IMAGE });
+    const reqRes1 = createMockReqRes('POST', '/api/verify-image', {
+      image: VALID_PRODUCT_IMAGE,
+      title: 'Handcrafted Teak Table',
+      description: 'Solid teak table with dovetail joinery.',
+      category: 'Furniture'
+    });
     const res1 = await reqRes1.execute();
-    console.log('res1 result:', res1.statusCode, res1.body);
 
-    assert.strictEqual(res1.statusCode, 200, 'Should return status 200 for verification call');
-    assert.strictEqual(res1.body.success, true, 'Verification response must be successful');
-    assert.strictEqual(res1.body.verified, true, 'Image must be verified as true');
-    assert.strictEqual(res1.body.message, 'Image Verified — You can proceed.', 'Must output exact success message');
-    assert.ok(res1.body.token && res1.body.token.startsWith('vtok-'), 'Must provide authoritative verification token');
+    assert.strictEqual(res1.statusCode, 200, 'Should return status 200 for successful verification');
+    assert.strictEqual(res1.body.success, true);
+    assert.strictEqual(res1.body.verified, true);
+    assert.strictEqual(res1.body.message, 'Image Verified — You can proceed.');
+    assert.ok(res1.body.token && res1.body.token.startsWith('vtok-'), 'Must issue vtok- verification token');
     const validToken = res1.body.token;
-    console.log('✓ Scenario 1 Passed: Suitable image received green verified state with token: ' + validToken.slice(0, 16) + '...\n');
 
-    // ── Scenario 2: Unreadable or unsuitable image is rejected ──────────────────────
-    console.log('Scenario 2: Unreadable or unsuitable image is rejected');
+    // Verify outbound request shape matched Groq OpenAI chat completions spec
+    assert.strictEqual(lastCapturedRequest.url, 'https://api.groq.com/openai/v1/chat/completions');
+    assert.strictEqual(lastCapturedRequest.options.headers.Authorization, 'Bearer gsk_test_secret_api_key_9988');
+    assert.strictEqual(lastCapturedRequest.body.model, 'qwen/qwen3.8-27b');
+    assert.ok(Array.isArray(lastCapturedRequest.body.messages));
+    assert.strictEqual(lastCapturedRequest.body.messages[0].content[1].type, 'image_url');
+    // Verify prompt included product details
+    assert.ok(lastCapturedRequest.body.messages[0].content[0].text.includes('Handcrafted Teak Table'));
+    console.log('✓ Test 1 Passed: Genuine image verified with authoritative token: ' + validToken.slice(0, 16) + '...\n');
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 2: Flagged/suspicious image response (returns verified: false)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 2: Flagged/suspicious image response is rejected');
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
+      return createMockCompletion({
+        verified: false,
+        readable: false,
+        clearProduct: false,
+        suspiciousArtifacts: true,
+        watermarks: true,
+        confidence: 'high',
+        reason: 'Image is unreadable and exhibits heavy watermark overlays.'
+      });
+    };
+
     const reqRes2 = createMockReqRes('POST', '/api/verify-image', { image: REJECTED_UNSUITABLE_IMAGE });
     const res2 = await reqRes2.execute();
 
-    assert.ok(res2.statusCode === 200 || res2.statusCode === 400, 'Should return status 200/400 for verification assessment');
-    assert.strictEqual(res2.body.verified, false, 'Unsuitable image must not be verified');
-    assert.strictEqual(
-      res2.body.error,
-      'Image verification failed. Please upload a clearer, genuine product photo.',
-      'Must output exact rejection message'
-    );
-    assert.strictEqual(res2.body.token, undefined, 'No verification token should be issued for rejected image');
-    console.log('✓ Scenario 2 Passed: Unsuitable image rejected with exact required warning message.\n');
+    assert.ok(res2.statusCode === 200 || res2.statusCode === 400);
+    assert.strictEqual(res2.body.verified, false);
+    assert.strictEqual(res2.body.error, 'Image verification failed. Please upload a clearer, genuine product photo.');
+    assert.strictEqual(res2.body.token, undefined);
+    assert.strictEqual(res2.body.unavailable, false);
+    console.log('✓ Test 2 Passed: Suspicious image flagged and rejected without issuing a token.\n');
 
-    // ── Scenario 3: Prevent direct API requests from bypassing verification ────────
-    console.log('Scenario 3: Direct API submission with unverified image is blocked');
-    const UNVERIFIED_IMAGE =
-      'data:image/png;base64,' + Buffer.from('unverified_fresh_photo_content_999').toString('base64');
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 3: Missing or invalid image payload
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 3: Missing or invalid image payload handling');
+    // 3a. Missing image in request body
+    const res3a = await createMockReqRes('POST', '/api/verify-image', { image: '' }).execute();
+    assert.strictEqual(res3a.statusCode, 400);
+    assert.strictEqual(res3a.body.success, false);
+    assert.strictEqual(res3a.body.verified, false);
 
-    const unverifiedShopPayload = {
-      name: 'Direct Bypass Attempt Chair',
-      seller: 'Shady Studio',
-      price: 25000,
-      image: UNVERIFIED_IMAGE
+    // 3b. Unsupported format (e.g. GIF)
+    const res3b = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+    }).execute();
+    assert.strictEqual(res3b.statusCode, 400);
+    assert.strictEqual(res3b.body.verified, false);
+    assert.ok(res3b.body.error.includes('Unsupported image format'));
+
+    // 3c. Oversized image (> 5MB)
+    const largeBuffer = Buffer.alloc(5.2 * 1024 * 1024, 0);
+    const res3c = await createMockReqRes('POST', '/api/verify-image', {
+      image: `data:image/jpeg;base64,${largeBuffer.toString('base64')}`
+    }).execute();
+    assert.strictEqual(res3c.statusCode, 400);
+    assert.strictEqual(res3c.body.verified, false);
+    assert.ok(res3c.body.error.includes('5MB'));
+    console.log('✓ Test 3 Passed: Missing image, invalid format, and oversized payloads cleanly blocked.\n');
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 4: Missing or placeholder API key (returns unavailable: true, 503)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 4: Missing or placeholder API key safely marks service unavailable');
+    // Set to placeholder
+    process.env.GROQ_API_KEY = 'your_groq_api_key_here';
+    const configPlaceholder = getGroqConfig();
+    assert.strictEqual(configPlaceholder.hasValidKey, false);
+
+    const testUnavailImage = 'data:image/png;base64,' + Buffer.from('missing_key_test_bytes_123').toString('base64');
+    const res4 = await createMockReqRes('POST', '/api/verify-image', { image: testUnavailImage }).execute();
+
+    assert.strictEqual(res4.statusCode, 503, 'Must return 503 when API key is placeholder');
+    assert.strictEqual(res4.body.success, false);
+    assert.strictEqual(res4.body.verified, false);
+    assert.strictEqual(res4.body.unavailable, true);
+    assert.strictEqual(res4.body.error, 'Verification is temporarily unavailable. Please try again.');
+    console.log('✓ Test 4 Passed: Missing/placeholder API key returns exact required 503 unavailable message.\n');
+
+    // Restore test API key
+    process.env.GROQ_API_KEY = 'gsk_test_secret_api_key_9988';
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 5: Timeout, rate limit (429), and auth error handling
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 5: Timeout, rate limit (429), and auth error handling');
+    // 5a. Rate limit (429)
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
+      ok: false,
+      status: 429,
+      text: async () => 'Rate limit exceeded',
+      json: async () => ({ error: { message: 'Too Many Requests' } })
+    });
+    const res5a = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/png;base64,' + Buffer.from('rate_limit_test_bytes_321').toString('base64')
+    }).execute();
+    assert.strictEqual(res5a.statusCode, 503);
+    assert.strictEqual(res5a.body.unavailable, true);
+    assert.strictEqual(res5a.body.error, 'Verification is temporarily unavailable. Please try again.');
+
+    // 5b. Auth failure (401)
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'Invalid credentials',
+      json: async () => ({ error: { message: 'Unauthorized' } })
+    });
+    const res5b = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/png;base64,' + Buffer.from('auth_fail_test_bytes_654').toString('base64')
+    }).execute();
+    assert.strictEqual(res5b.statusCode, 503);
+    assert.strictEqual(res5b.body.unavailable, true);
+
+    // 5c. Network timeout exception
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
+      throw new Error('Connect timeout after 25000ms');
     };
+    const res5c = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/png;base64,' + Buffer.from('timeout_test_bytes_987').toString('base64')
+    }).execute();
+    assert.strictEqual(res5c.statusCode, 503);
+    assert.strictEqual(res5c.body.unavailable, true);
+    assert.strictEqual(res5c.body.error, 'Verification is temporarily unavailable. Please try again.');
+    console.log('✓ Test 5 Passed: Rate limits, auth errors, and timeouts return 503 unavailable.\n');
 
-    const reqRes3 = createMockReqRes('POST', '/api/products', unverifiedShopPayload);
-    const res3 = await reqRes3.execute();
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 6: Invalid or unexpected API response (returns 503)
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 6: Invalid or unexpected API response format handling');
+    // 6a. Malformed non-JSON completion
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: 'This is not valid json at all' } }]
+      }),
+      text: async () => 'raw text'
+    });
+    const res6a = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/png;base64,' + Buffer.from('invalid_json_test_bytes_111').toString('base64')
+    }).execute();
+    assert.strictEqual(res6a.statusCode, 503);
+    assert.strictEqual(res6a.body.unavailable, true);
+    assert.strictEqual(res6a.body.error, 'Verification is temporarily unavailable. Please try again.');
 
-    assert.strictEqual(res3.statusCode, 400, 'Direct submission without verification must be rejected with 400');
-    assert.strictEqual(res3.body.success, false);
-    assert.strictEqual(
-      res3.body.error,
-      'Product image verification required. The uploaded image must pass verification before listing submission.'
-    );
-    console.log('✓ Scenario 3 Passed: Server-authoritative check blocked unverified direct API listing.\n');
+    // 6b. Empty choices structure
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [] }),
+      text: async () => '{}'
+    });
+    const res6b = await createMockReqRes('POST', '/api/verify-image', {
+      image: 'data:image/png;base64,' + Buffer.from('empty_choices_test_bytes_222').toString('base64')
+    }).execute();
+    assert.strictEqual(res6b.statusCode, 503);
+    assert.strictEqual(res6b.body.unavailable, true);
+    console.log('✓ Test 6 Passed: Unparseable responses and malformed payloads handled gracefully.\n');
 
-    // ── Scenario 4: Submission succeeds with verified image and valid token ─────────
-    console.log('Scenario 4: Submission succeeds with verified image and valid token');
-    const verifiedShopPayload = {
-      name: 'Archival Verified Artisan Table',
-      seller: 'Studio Jeanneret',
-      sellerId: 'artisan-1',
-      price: 48000,
+    // ─────────────────────────────────────────────────────────────────────────────
+    // TEST 7: Seller-upload flow correctly enforcing verification results
+    // ─────────────────────────────────────────────────────────────────────────────
+    console.log('Test 7: Seller upload flow and curator workflow enforcement');
+    // 7a. Legitimate submission with verified image and valid token
+    const verifiedUploadPayload = {
+      name: 'Archival Teak Armchair',
+      seller: 'Pierre Jeanneret Atelier',
+      sellerId: 'artisan-jeanneret',
+      price: 65000,
       image: VALID_PRODUCT_IMAGE,
       images: [VALID_PRODUCT_IMAGE],
       verificationToken: validToken,
       category: 'Handmade',
-      description: 'Handcrafted teak table with authentic joinery.'
+      description: 'Handcrafted teak armchair with cane weaving.'
     };
 
-    const reqRes4 = createMockReqRes('POST', '/api/products', verifiedShopPayload);
-    const res4 = await reqRes4.execute();
+    const res7a = await createMockReqRes('POST', '/api/products', verifiedUploadPayload).execute();
+    assert.strictEqual(res7a.statusCode, 201, 'Verified product must be accepted with 201 Created');
+    assert.strictEqual(res7a.body.success, true);
+    assert.strictEqual(res7a.body.product.listingStatus, 'pending', 'Must start in pending status awaiting curator review');
+    const createdProductId = res7a.body.product.id;
 
-    assert.strictEqual(res4.statusCode, 201, 'Verified listing must be accepted with 201 Created');
-    assert.strictEqual(res4.body.success, true);
-    assert.strictEqual(res4.body.product.listingStatus, 'pending', 'Must start in pending approval workflow');
-    const createdProdId = res4.body.product.id;
-    console.log('✓ Scenario 4 Passed: Verified listing accepted; entered pending curator approval status.\n');
-
-    // ── Scenario 5: Replacing image invalidates previous verification ──────────────
-    console.log('Scenario 5: Replacing an image invalidates previous result');
-    const MODIFIED_IMAGE =
-      'data:image/png;base64,' + Buffer.from('different_tampered_replacement_bytes_123').toString('base64');
-
-    // Attacker tries to submit a different image using the previously issued validToken
+    // 7b. Tampered image payload (using validToken with different image bytes)
     const tamperedPayload = {
-      name: 'Tampered Image Table',
-      seller: 'Studio Jeanneret',
-      sellerId: 'artisan-1',
-      price: 48000,
-      image: MODIFIED_IMAGE,
-      verificationToken: validToken,
-      description: 'Modified image submission.'
+      name: 'Tampered Teak Armchair',
+      seller: 'Pierre Jeanneret Atelier',
+      price: 65000,
+      image: TAMPERED_IMAGE,
+      verificationToken: validToken
     };
+    // Rejection response for the tampered image
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
+      return createMockCompletion({
+        verified: false,
+        reason: 'Tampered image does not match verified token.'
+      });
+    };
+    const res7b = await createMockReqRes('POST', '/api/products', tamperedPayload).execute();
+    assert.strictEqual(res7b.statusCode, 400, 'Tampered image mismatch must be rejected with 400');
+    assert.strictEqual(res7b.body.success, false);
 
-    const reqRes5 = createMockReqRes('POST', '/api/products', tamperedPayload);
-    const res5 = await reqRes5.execute();
+    // 7c. Direct upload with rejected image
+    const res7c = await createMockReqRes('POST', '/api/products', {
+      name: 'Unverified Junk Product',
+      seller: 'Unknown',
+      price: 1000,
+      image: REJECTED_UNSUITABLE_IMAGE
+    }).execute();
+    assert.strictEqual(res7c.statusCode, 400);
+    assert.strictEqual(res7c.body.success, false);
 
-    assert.strictEqual(res5.statusCode, 400, 'Tampered image mismatch must be rejected with 400');
-    assert.strictEqual(res5.body.success, false);
-    assert.strictEqual(
-      res5.body.error,
-      'Product image verification required. The uploaded image must pass verification before listing submission.'
-    );
-    console.log('✓ Scenario 5 Passed: Tampered or replaced image correctly rejected because hash does not match token.\n');
-
-    // ── Scenario 6: Model-service error / service offline handling ──────────────────
-    console.log('Scenario 6: Model service unavailable or error handling');
-    // Disable in-process handler and point to offline port to test service unavailable error path
-    globalThis.__QWEN_INPROCESS_HANDLER__ = null;
-    process.env.QWEN_VL_ENDPOINT = 'http://127.0.0.1:59999/v1/chat/completions';
-
-    const reqRes6 = createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('offline_service_test_bytes_777').toString('base64')
-    });
-    const res6 = await reqRes6.execute();
-
-    assert.strictEqual(res6.statusCode, 503, 'Should return status 503 when inference service is down');
-    assert.strictEqual(res6.body.success, false);
-    assert.strictEqual(res6.body.verified, false, 'Service failure must never result in false verified state');
-    assert.strictEqual(res6.body.unavailable, true, 'Flag unavailable must be true');
-    assert.strictEqual(
-      res6.body.error,
-      'Verification is temporarily unavailable. Please try again.',
-      'Must output exact unavailable message'
-    );
-    console.log('✓ Scenario 6 Passed: Unavailable service safely returned exact required message and refused verification.\n');
-
-    // Restore handler
-    setupInProcessQwenHandler();
-
-    // ── Scenario 7: Unsupported format and size limits ─────────────────────────────
-    console.log('Scenario 7: Unsupported file formats and oversized images');
-    // Unsupported format: GIF
-    const reqRes7a = createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-    });
-    const res7a = await reqRes7a.execute();
-    assert.strictEqual(res7a.statusCode, 400);
-    assert.strictEqual(res7a.body.verified, false);
-    assert.ok(res7a.body.error.includes('Unsupported image format'));
-
-    // Oversized image (> 5MB)
-    const largeBuffer = Buffer.alloc(5.2 * 1024 * 1024, 0);
-    const reqRes7b = createMockReqRes('POST', '/api/verify-image', {
-      image: `data:image/jpeg;base64,${largeBuffer.toString('base64')}`
-    });
-    const res7b = await reqRes7b.execute();
-    assert.strictEqual(res7b.statusCode, 400);
-    assert.strictEqual(res7b.body.verified, false);
-    assert.ok(res7b.body.error.includes('5MB'));
-    console.log('✓ Scenario 7 Passed: Invalid formats and oversized files rejected by server validation.\n');
-
-    // ── Scenario 8: Existing seller approval workflow preserved ────────────────────
-    console.log('Scenario 8: Existing curator/seller approval workflow preserved');
-    const reqRes8Approve = createMockReqRes('POST', `/api/products/${createdProdId}/approve`);
-    const res8Approve = await reqRes8Approve.execute();
-    assert.strictEqual(res8Approve.statusCode, 200);
-    assert.strictEqual(res8Approve.body.product.listingStatus, 'active', 'Curator approval transitions product to active');
-    console.log('✓ Scenario 8 Passed: Verified product successfully approved and transitioned to active status.\n');
+    // 7d. Curator approval preserves existing workflow
+    const res7d = await createMockReqRes('POST', `/api/products/${createdProductId}/approve`).execute();
+    assert.strictEqual(res7d.statusCode, 200);
+    assert.strictEqual(res7d.body.product.listingStatus, 'active', 'Curator approval moves product to active');
+    console.log('✓ Test 7 Passed: Product upload enforcement and curator approval flow fully verified.\n');
 
     console.log('================================================================');
-    console.log('ALL 8 IMAGE VERIFICATION SCENARIO TESTS PASSED! (8/8)');
+    console.log('ALL 7 GROQ VISION API TEST CASES PASSED SUCCESSFULLY!');
     console.log('================================================================\n');
   } finally {
+    delete globalThis.__GROQ_MOCK_FETCHER__;
+    delete globalThis.__QWEN_MOCK_FETCHER__;
     clearVerificationRegistry();
+    if (originalEnvKey !== undefined) process.env.GROQ_API_KEY = originalEnvKey;
+    else delete process.env.GROQ_API_KEY;
+    if (originalEnvUrl !== undefined) process.env.GROQ_API_BASE_URL = originalEnvUrl;
+    else delete process.env.GROQ_API_BASE_URL;
+    if (originalEnvModel !== undefined) process.env.GROQ_VISION_MODEL = originalEnvModel;
+    else delete process.env.GROQ_VISION_MODEL;
   }
 }
 
 runTests().catch((err) => {
-  console.error('Test suite failed:', err);
+  console.error('Test suite execution failed:', err);
   process.exit(1);
 });

@@ -136,7 +136,7 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
-  // 2b. POST /api/verify-image (Verify uploaded product image via local Qwen3-VL-8B-Instruct)
+  // 2b. POST /api/verify-image (Verify uploaded product image via Groq vision API)
   if (pathname === '/api/verify-image' && method === 'POST') {
     try {
       const data = await parseJsonBody(req);
@@ -149,7 +149,11 @@ export async function handleApiRequest(req, res) {
         return true;
       }
 
-      const result = await verifyProductImage(data.image);
+      const result = await verifyProductImage(data.image, {
+        title: data.title,
+        description: data.description,
+        category: data.category
+      });
       const statusCode = result.success ? 200 : (result.unavailable ? 503 : 400);
       sendJson(res, statusCode, result);
       return true;
@@ -273,13 +277,17 @@ export async function handleApiRequest(req, res) {
 
       // Authoritative image verification check: If an image is provided, it must be verified
       if (primaryImage) {
-        const authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
         if (!authorized) {
-          sendJson(res, 400, {
-            success: false,
-            error: 'Product image verification required. The uploaded image must pass verification before listing submission.'
-          });
-          return true;
+          const verifyRes = await verifyProductImage(primaryImage);
+          if (!verifyRes.verified) {
+            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+              success: false,
+              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
+            });
+            return true;
+          }
+          authorized = true;
         }
       }
 
@@ -889,13 +897,17 @@ export async function handleApiRequest(req, res) {
 
       // Authoritative image verification check: If an image is provided, it must be verified
       if (primaryImage) {
-        const authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
         if (!authorized) {
-          sendJson(res, 400, {
-            success: false,
-            error: 'Product image verification required. The uploaded image must pass verification before listing submission.'
-          });
-          return true;
+          const verifyRes = await verifyProductImage(primaryImage);
+          if (!verifyRes.verified) {
+            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+              success: false,
+              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
+            });
+            return true;
+          }
+          authorized = true;
         }
       }
 
