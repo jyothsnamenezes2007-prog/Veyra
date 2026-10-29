@@ -511,7 +511,12 @@ export const Account = () => {
 
               {/* Sign Out Button */}
               <button
-                onClick={signOut}
+                onClick={async () => {
+                  const res = await signOut();
+                  if (res && res.success !== false) {
+                    navigate('/');
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

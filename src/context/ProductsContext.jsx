@@ -190,25 +190,21 @@ export const ProductsProvider = ({ children }) => {
     };
 
     // Authoritative server persistence (server coordinates Supabase sync & validation)
-    try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct)
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.product) {
-          setCustomProducts((prev) => [json.product, ...prev.filter((p) => p.id !== newProduct.id)]);
-          return json.product;
-        }
-      }
-    } catch (e) {
-      console.warn('[ProductsContext] Backend offline, falling back to optimistic local state:', e.message);
+    const res = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProduct)
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `Server responded with status ${res.status}`);
     }
-
-    setCustomProducts((prev) => [newProduct, ...prev]);
-    return newProduct;
+    const json = await res.json();
+    if (json.product) {
+      setCustomProducts((prev) => [json.product, ...prev.filter((p) => p.id !== newProduct.id)]);
+      return json.product;
+    }
+    throw new Error('Failed to create product: invalid server response.');
   }, []);
 
   const getProductById = useCallback(

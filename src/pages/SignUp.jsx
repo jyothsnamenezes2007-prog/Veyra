@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { ArrowRight, Check, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export const SignUp = () => {
-  const { signUp, signInWithGoogle } = useAuth();
+  const { signUp, signInWithGoogle, resendConfirmationEmail } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -22,6 +22,8 @@ export const SignUp = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState('');
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -29,8 +31,11 @@ export const SignUp = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
     setError('');
     setSuccessMessage('');
+    setResendStatus('');
 
     if (!formData.name || !formData.email || !formData.password) {
       setError('Please complete all required fields.');
@@ -56,6 +61,23 @@ export const SignUp = () => {
       }
     } else {
       setError(res.error || 'Registration failed.');
+    }
+  };
+
+  const handleResend = async () => {
+    const cleanEmail = formData.email.trim();
+    if (!cleanEmail) return;
+
+    setIsResending(true);
+    setResendStatus('');
+
+    const res = await resendConfirmationEmail(cleanEmail);
+    setIsResending(false);
+
+    if (res.success) {
+      setResendStatus(`Verification email resent to ${cleanEmail}.`);
+    } else {
+      setResendStatus(res.error || 'Failed to resend confirmation email.');
     }
   };
 
@@ -138,9 +160,39 @@ export const SignUp = () => {
               <Check size={24} />
             </div>
             <h3 style={{ fontSize: '1.35rem', marginBottom: '8px' }}>Check Your Email</h3>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
               {successMessage}
             </p>
+
+            <div style={{ marginBottom: '24px', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              {resendStatus ? (
+                <p style={{ color: 'var(--accent-burgundy)', fontWeight: 500, margin: 0 }}>
+                  {resendStatus}
+                </p>
+              ) : (
+                <p style={{ margin: 0 }}>
+                  Didn't receive the email?{' '}
+                  <button
+                    type="button"
+                    disabled={isResending}
+                    onClick={handleResend}
+                    style={{
+                      color: 'var(--accent-burgundy)',
+                      textDecoration: 'underline',
+                      fontWeight: 600,
+                      cursor: isResending ? 'not-allowed' : 'pointer',
+                      padding: 0,
+                      background: 'none',
+                      border: 'none',
+                      fontSize: 'inherit'
+                    }}
+                  >
+                    {isResending ? 'Sending...' : 'Click to resend'}
+                  </button>
+                </p>
+              )}
+            </div>
+
             <Link to={`/signin${location.search}`} className="btn btn-primary" style={{ width: '100%' }}>
               Proceed to Sign In
             </Link>
@@ -215,7 +267,10 @@ export const SignUp = () => {
                     color: 'var(--text-secondary)',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center'
+                    justifyContent: 'center',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer'
                   }}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

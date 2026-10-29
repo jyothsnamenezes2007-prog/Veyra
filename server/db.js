@@ -285,6 +285,19 @@ export function deleteProduct(id) {
   return removed;
 }
 
+export function deleteCustomAuction(id) {
+  // CRITICAL SAFETY CHECK: NEVER allow deletion of real production auctions
+  if (id === 'auc-1' || id === 'up-2' || id === 'auc-dev-test') {
+    return false;
+  }
+  const db = getDatabase();
+  const index = db.auctions.findIndex((a) => a.id === id || a.productId === id);
+  if (index === -1) return false;
+  const removed = db.auctions.splice(index, 1)[0];
+  saveDatabase();
+  return removed;
+}
+
 // Proxy bidding operations
 export function getProxyConfigs(auctionId = null) {
   const db = getDatabase();

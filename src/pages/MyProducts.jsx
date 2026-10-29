@@ -133,6 +133,8 @@ export const MyProducts = () => {
   const [activeMeetingAuction, setActiveMeetingAuction] = useState(null);
   const [rescheduleAuction, setRescheduleAuction] = useState(null);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // Profile edit panel state
   const [profileEditOpen, setProfileEditOpen] = useState(false);
@@ -598,7 +600,7 @@ export const MyProducts = () => {
           </div>
         )}
 
-        {/* Delete Sold Product Confirmation Modal */}
+        {/* Delete Product Confirmation Modal */}
         {productToDelete && (
           <div
             role="dialog"
@@ -643,7 +645,7 @@ export const MyProducts = () => {
                   <Trash2 size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Delete Sold Product?</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Delete Product Listing?</h3>
                   <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
                     Listing ID: {productToDelete.id}
                   </p>
@@ -651,17 +653,37 @@ export const MyProducts = () => {
               </div>
 
               <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
-                Are you sure you want to delete <strong>{productToDelete.name}</strong> from your active product listings?
+                Are you sure you want to delete <strong>{productToDelete.name}</strong> from your seller listings?
                 <br /><br />
                 <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 500 }}>
                   Data Safety Guarantee: All historical auction records, bids, order invoices, and payment audits will remain securely preserved.
                 </span>
               </p>
 
+              {deleteError && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    backgroundColor: 'rgba(158, 58, 58, 0.08)',
+                    border: '1px solid rgba(158, 58, 58, 0.25)',
+                    borderRadius: 'var(--radius-xs)',
+                    color: 'var(--error-color)',
+                    fontSize: '12.5px',
+                    marginBottom: '18px'
+                  }}
+                >
+                  {deleteError}
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
-                  onClick={() => setProductToDelete(null)}
+                  disabled={isDeleting}
+                  onClick={() => {
+                    setProductToDelete(null);
+                    setDeleteError('');
+                  }}
                   className="btn btn-secondary"
                   style={{ height: '38px', padding: '0 18px', fontSize: '13px' }}
                 >
@@ -669,9 +691,17 @@ export const MyProducts = () => {
                 </button>
                 <button
                   type="button"
+                  disabled={isDeleting}
                   onClick={async () => {
-                    await deleteProduct(productToDelete.id, user);
-                    setProductToDelete(null);
+                    setIsDeleting(true);
+                    setDeleteError('');
+                    const res = await deleteProduct(productToDelete.id, user);
+                    setIsDeleting(false);
+                    if (res && res.success !== false) {
+                      setProductToDelete(null);
+                    } else if (res?.error) {
+                      setDeleteError(res.error);
+                    }
                   }}
                   className="btn btn-burgundy"
                   style={{
@@ -679,10 +709,12 @@ export const MyProducts = () => {
                     padding: '0 20px',
                     fontSize: '13px',
                     backgroundColor: 'var(--error-color)',
-                    borderColor: 'var(--error-color)'
+                    borderColor: 'var(--error-color)',
+                    opacity: isDeleting ? 0.7 : 1,
+                    cursor: isDeleting ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  Confirm Delete
+                  {isDeleting ? 'Deleting...' : 'Confirm Delete'}
                 </button>
               </div>
             </div>
@@ -919,7 +951,7 @@ const ProductRow = ({
               <span>Meet Winner</span>
             </button>
           )}
-          {product.derivedStatus === 'sold' && (
+          {product.derivedStatus !== 'auction' && (
             <button
               type="button"
               onClick={() => onDeleteProduct && onDeleteProduct(product)}
@@ -936,7 +968,7 @@ const ProductRow = ({
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
-              title="Delete sold product"
+              title="Delete product listing"
             >
               <Trash2 size={12} />
               <span>Delete</span>
