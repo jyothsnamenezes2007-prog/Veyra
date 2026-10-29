@@ -6,14 +6,9 @@ import {
   DEMO_AUCTION_IDS,
   getDemoBaselineAuction,
   getAuthoritativeAuctionWinner,
-  getMeetingAccess,
-  DEV_TEST_AUCTION_ID,
-  getDevTestAuction
+  getMeetingAccess
 } from '../data/auctions';
 import { useToast } from './ToastContext';
-import { useAuth } from './AuthContext';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { getSocket } from '../lib/socket';
 
 const AuctionContext = createContext(null);
 const AUCTIONS_STORAGE_KEY = 'veyra_live_auctions_data';
@@ -25,7 +20,6 @@ const AUCTION_COMMENTS_KEY = 'veyra_auction_comments';
 
 export const AuctionProvider = ({ children }) => {
   const { addToast } = useToast();
-  const { user } = useAuth();
 
   // 1. Base Demo / Live Auctions state
   const [liveAuctions, setLiveAuctions] = useState(() => {
@@ -87,114 +81,7 @@ export const AuctionProvider = ({ children }) => {
   });
 
   // 3. Base Upcoming auctions
-  const [baseUpcomingAuctions, setBaseUpcomingAuctions] = useState(UPCOMING_AUCTIONS);
-  const [isSupabaseAuctionsLoading, setIsSupabaseAuctionsLoading] = useState(false);
-
-  // Synchronize live and upcoming auctions with Supabase
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-    let isMounted = true;
-    setIsSupabaseAuctionsLoading(true);
-
-    async function fetchSupabaseAuctions() {
-      try {
-        const { data, error } = await supabase
-          .from('auctions')
-          .select('*')
-          .order('created_at', { ascending: true });
-
-        if (error) {
-          console.warn('Error reading auctions from Supabase:', error.message);
-          return;
-        }
-
-        if (isMounted && Array.isArray(data) && data.length > 0) {
-          const now = Date.now();
-          const liveList = [];
-          const upcomingList = [];
-
-          data.forEach((row) => {
-            const isUpcoming =
-              row.status === 'upcoming' ||
-              row.status === 'scheduled' ||
-              (row.starts_at && new Date(row.starts_at).getTime() > now);
-
-            if (isUpcoming) {
-              const baseline =
-                UPCOMING_AUCTIONS.find((a) => a.id === row.legacy_id || a.id === row.id) || {};
-              const schedTimestamp = row.starts_at
-                ? new Date(row.starts_at).getTime()
-                : baseline.scheduledTimestamp || now + 86400000;
-              upcomingList.push({
-                ...baseline,
-                id: row.legacy_id || row.id,
-                supabaseId: row.id,
-                name: row.title || baseline.name || 'Curated Lot',
-                maker: row.seller_name || baseline.maker || baseline.seller || 'Studio Workshop',
-                seller: row.seller_name || baseline.seller || 'Studio Workshop',
-                scheduledTimestamp: schedTimestamp,
-                startingBid: Number(row.starting_price || baseline.startingBid || 0),
-                currentBid: Number(row.current_price || row.starting_price || baseline.currentBid || 0),
-                thumbnail: row.image_url || baseline.thumbnail || '',
-                image: row.image_url || baseline.thumbnail || '',
-                description: row.description || baseline.description || '',
-                status: 'upcoming'
-              });
-            } else {
-              const baseline =
-                INITIAL_LIVE_AUCTIONS.find((a) => a.id === row.legacy_id || a.id === row.id) || {};
-              const start = row.starts_at ? new Date(row.starts_at).getTime() : now - 60000;
-              const end = row.ends_at ? new Date(row.ends_at).getTime() : now + 7200000;
-              const isEnded = row.status === 'ended' || now >= end;
-              const remainingSeconds = isEnded ? 0 : Math.max(0, Math.floor((end - now) / 1000));
-              liveList.push({
-                ...baseline,
-                id: row.legacy_id || row.id,
-                supabaseId: row.id,
-                name: row.title || baseline.name || 'Curated Lot',
-                maker: row.seller_name || baseline.maker || baseline.seller || 'Studio Workshop',
-                seller: row.seller_name || baseline.seller || 'Studio Workshop',
-                startingBid: Number(row.starting_price || baseline.startingBid || 0),
-                currentBid: Number(row.current_price || row.starting_price || baseline.currentBid || 0),
-                startTimestamp: start,
-                scheduledTimestamp: start,
-                endTimestamp: end,
-                endTime: end,
-                remainingSeconds,
-                status: isEnded ? 'ended' : 'active',
-                image: row.image_url || baseline.image || '',
-                images:
-                  baseline.images && baseline.images.length > 0
-                    ? baseline.images
-                    : [row.image_url || baseline.image].filter(Boolean),
-                description: row.description || baseline.description || '',
-                type: 'auction',
-                isAuction: true,
-                approvalStatus: 'approved'
-              });
-            }
-          });
-
-          if (liveList.length > 0) {
-            setLiveAuctions(liveList);
-          }
-          if (upcomingList.length > 0) {
-            setBaseUpcomingAuctions(upcomingList);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to connect to Supabase auctions table:', err);
-      } finally {
-        if (isMounted) setIsSupabaseAuctionsLoading(false);
-      }
-    }
-
-    fetchSupabaseAuctions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const [baseUpcomingAuctions] = useState(UPCOMING_AUCTIONS);
 
   // 4. User auction registrations
   const [registrations, setRegistrations] = useState(() => {
@@ -362,102 +249,104 @@ export const AuctionProvider = ({ children }) => {
     remindersRef.current = reminders;
   }, [reminders]);
 
-  // Real-time server push events via Socket.IO
+  // Real-time server push events via EventSource (SSE)
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
+    let es = null;
+    let reconnectTimeout = null;
 
-    // Resynchronize state upon reconnection to recover any missed updates
-    const handleConnect = () => {
-      syncWithServer();
-    };
-
-    const handleRealtimeEvent = (data) => {
+    const connectSSE = () => {
       try {
-        if (!data) return;
-        const { type, payload } = data;
+        es = new EventSource('/api/events');
 
-        if (type === 'AUCTION_STARTED') {
-          const { auction } = payload;
-          setLiveAuctions((prev) =>
-            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-          );
-          setCustomAuctions((prev) =>
-            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-          );
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            const { type, payload } = data;
 
-          // Notify if reminder set
-          if (remindersRef.current.includes(auction.id)) {
-            addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
-          }
-        } else if (type === 'AUCTION_ENDED') {
-          const { auction } = payload;
-          setLiveAuctions((prev) =>
-            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-          );
-          setCustomAuctions((prev) =>
-            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-          );
-          addToast(`Auction concluded for "${auction.name}".`);
-        } else if (type === 'BID_PLACED') {
-          const { auctionId, updatedAuction } = payload;
-          setLiveAuctions((prev) =>
-            prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-          );
-          setCustomAuctions((prev) =>
-            prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-          );
-        } else if (type === 'AUCTION_APPROVED' || type === 'AUCTION_RESCHEDULED') {
-          const { auction } = payload;
-          setCustomAuctions((prev) => {
-            const exists = prev.some((a) => a.id === auction.id);
-            return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
-          });
-        } else if (type === 'AUCTION_CREATED') {
-          const { auction } = payload;
-          setCustomAuctions((prev) => {
-            const exists = prev.some((a) => a.id === auction.id);
-            return exists ? prev : [auction, ...prev];
-          });
-        } else if (type === 'PRODUCT_DELETED') {
-          const { productId } = payload || {};
-          if (productId) {
-            setCustomAuctions((prev) => prev.filter((a) => a.id !== productId && a.productId !== productId));
-          }
-        } else if (type === 'PROXY_BID_PLACED') {
-          const { bid, auctionId } = payload;
-          addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
-        } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
-          const { reason, auctionId } = payload;
-          addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
-        } else if (type === 'COMMENT_ADDED') {
-          const { auctionId, comment } = payload || {};
-          if (auctionId && comment && comment.id) {
-            setComments((prev) => {
-              const list = prev[auctionId] || [];
-              if (list.some((c) => c.id === comment.id)) {
-                return prev;
+            if (type === 'AUCTION_STARTED') {
+              const { auction } = payload;
+              setLiveAuctions((prev) =>
+                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+              );
+              setCustomAuctions((prev) =>
+                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+              );
+
+              // Notify if reminder set
+              if (remindersRef.current.includes(auction.id)) {
+                addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
               }
-              return {
-                ...prev,
-                [auctionId]: [...list, comment]
-              };
-            });
+            } else if (type === 'AUCTION_ENDED') {
+              const { auction } = payload;
+              setLiveAuctions((prev) =>
+                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+              );
+              setCustomAuctions((prev) =>
+                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+              );
+              addToast(`Auction concluded for "${auction.name}".`);
+            } else if (type === 'BID_PLACED') {
+              const { auctionId, updatedAuction } = payload;
+              setLiveAuctions((prev) =>
+                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+              );
+              setCustomAuctions((prev) =>
+                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+              );
+            } else if (type === 'AUCTION_APPROVED' || type === 'AUCTION_RESCHEDULED') {
+              const { auction } = payload;
+              setCustomAuctions((prev) => {
+                const exists = prev.some((a) => a.id === auction.id);
+                return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
+              });
+            } else if (type === 'AUCTION_CREATED') {
+              const { auction } = payload;
+              setCustomAuctions((prev) => {
+                const exists = prev.some((a) => a.id === auction.id);
+                return exists ? prev : [auction, ...prev];
+              });
+            } else if (type === 'PROXY_BID_PLACED') {
+              const { bid, auctionId } = payload;
+              addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
+            } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
+              const { reason, auctionId } = payload;
+              addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
+            } else if (type === 'COMMENT_ADDED') {
+              const { auctionId, comment } = payload || {};
+              if (auctionId && comment && comment.id) {
+                setComments((prev) => {
+                  const list = prev[auctionId] || [];
+                  if (list.some((c) => c.id === comment.id)) {
+                    return prev;
+                  }
+                  return {
+                    ...prev,
+                    [auctionId]: [...list, comment]
+                  };
+                });
+              }
+            }
+          } catch (err) {}
+        };
+
+        es.onerror = () => {
+          if (es) {
+            es.close();
+            es = null;
           }
-        }
-      } catch (err) {
-        console.warn('[AuctionContext] Real-time event handling error:', err);
-      }
+          // Try to reconnect in 5 seconds
+          reconnectTimeout = setTimeout(connectSSE, 5000);
+        };
+      } catch (err) {}
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('event', handleRealtimeEvent);
+    connectSSE();
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('event', handleRealtimeEvent);
+      if (es) es.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
-  }, [addToast, syncWithServer]);
+  }, [addToast]);
 
   // Cross-tab broadcast listener for multi-tab synchronization
   useEffect(() => {
@@ -619,15 +508,8 @@ export const AuctionProvider = ({ children }) => {
 
   // Combined Live Auctions
   const combinedLiveAuctions = useMemo(() => {
-    const list = [...liveAuctions, ...activeApprovedCustomAuctions];
-    if (import.meta.env.DEV && user?.id) {
-      const devAuction = getDevTestAuction(user);
-      if (devAuction && !list.some((a) => a.id === DEV_TEST_AUCTION_ID)) {
-        list.push(devAuction);
-      }
-    }
-    return list;
-  }, [liveAuctions, activeApprovedCustomAuctions, user]);
+    return [...liveAuctions, ...activeApprovedCustomAuctions];
+  }, [liveAuctions, activeApprovedCustomAuctions]);
 
   // Approved upcoming custom auctions
   const upcomingApprovedCustomAuctions = useMemo(() => {
@@ -712,27 +594,29 @@ export const AuctionProvider = ({ children }) => {
       };
 
       try {
-        // Authoritative server persistence (server coordinates Supabase sync, validation & paired catalog)
         const res = await fetch('/api/auctions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          return { success: false, error: data.error || `Server error (${res.status})` };
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.auction) {
+            setCustomAuctions((prev) => [data.auction, ...prev.filter((a) => a.id !== data.auction.id)]);
+            addToast(`"${data.auction.name}" submitted successfully for curator approval.`);
+            return { success: true, auction: data.auction };
+          }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          return { success: false, error: errData.error || 'Failed to submit auction lot.' };
         }
-        const data = await res.json();
-        if (data.success && data.auction) {
-          setCustomAuctions((prev) => [data.auction, ...prev.filter((a) => a.id !== data.auction.id)]);
-          addToast(`"${data.auction.name}" submitted successfully for curator approval.`);
-          return { success: true, auction: data.auction };
-        }
-        return { success: false, error: data.error || 'Failed to register auction lot.' };
       } catch (e) {
-        return { success: false, error: e.message || 'Network connection failed.' };
+        // Fallback to local store if server offline
       }
+
+      // Local fallback creation
+      const endsInSeconds = Math.max(0, Math.floor((endTimestamp - startTimestamp) / 1000));
       const primaryImage = lotData.image || (lotData.images && lotData.images[0]) || '';
       const imagesList = lotData.images && lotData.images.length > 0 ? lotData.images : [primaryImage];
 
@@ -1372,7 +1256,7 @@ export const AuctionProvider = ({ children }) => {
   // Registrations
   const isRegistered = (auctionId) => registrations.includes(auctionId);
   const toggleRegistration = (auctionId) => {
-    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId || a.supabaseId === auctionId);
+    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId);
     const title = auction ? auction.name : 'Auction';
 
     if (registrations.includes(auctionId)) {
@@ -1387,7 +1271,7 @@ export const AuctionProvider = ({ children }) => {
   // Reminders
   const isReminderSet = (auctionId) => reminders.includes(auctionId);
   const toggleReminder = (auctionId) => {
-    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId || a.supabaseId === auctionId);
+    const auction = combinedUpcomingAuctions.find((a) => a.id === auctionId);
     const title = auction ? auction.name : 'Auction';
 
     if (reminders.includes(auctionId)) {
@@ -1401,7 +1285,7 @@ export const AuctionProvider = ({ children }) => {
 
   // Leaderboard
   const getLeaderboard = (auctionId) => {
-    const auction = combinedLiveAuctions.find((a) => a.id === auctionId || a.productId === auctionId || a.supabaseId === auctionId);
+    const auction = combinedLiveAuctions.find((a) => a.id === auctionId || a.productId === auctionId);
     if (!auction || !auction.bidHistory || auction.bidHistory.length === 0) {
       return [];
     }
@@ -1506,7 +1390,6 @@ export const AuctionProvider = ({ children }) => {
         resetDemoAuction,
         resetAllDemoAuctions,
         DEMO_AUCTION_IDS,
-        DEV_TEST_AUCTION_ID,
         getAuthoritativeAuctionWinner,
         getMeetingAccess
       }}

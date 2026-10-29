@@ -17,6 +17,8 @@ import {
   Clock,
   Calendar,
   AlertCircle,
+  AlertTriangle,
+  RefreshCw,
   Plus,
   ShieldCheck,
   Loader2,
@@ -105,11 +107,15 @@ export const Sell = () => {
     condition: 'Pristine Museum Restored'
   });
 
-  // Images state (up to 6 images)
-  const [images, setImages] = useState([
-    'https://images.unsplash.com/photo-1580481077195-c3a821a58875?auto=format&fit=crop&w=1000&q=80',
-    'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80'
-  ]);
+  // Images state (up to 6 images) - starts empty for seller upload
+  const [images, setImages] = useState([]);
+
+  // Image verification states: 'idle' | 'verifying' | 'verified' | 'failed' | 'unavailable'
+  const [verificationStatus, setVerificationStatus] = useState('idle');
+  const [verificationMessage, setVerificationMessage] = useState('');
+  const [verificationReason, setVerificationReason] = useState('');
+  const [verificationToken, setVerificationToken] = useState(null);
+  const [verifiedImageSrc, setVerifiedImageSrc] = useState(null);
 
   const [customImageUrl, setCustomImageUrl] = useState('');
   const [imageError, setImageError] = useState('');
@@ -185,7 +191,55 @@ export const Sell = () => {
     };
   }, [sellingOption, formData.startDate, formData.startTime, formData.endDate, formData.endTime]);
 
-  // Handle file uploads with type & size validation
+  // Verify an uploaded image via backend Groq vision API
+  const runImageVerification = async (imageSrc) => {
+    const targetImage = imageSrc || (images.length > 0 ? images[0] : null);
+    if (!targetImage) return;
+
+    setVerificationStatus('verifying');
+    setVerificationMessage('Verifying your product image...');
+    setVerificationReason('');
+    setVerificationToken(null);
+    setVerifiedImageSrc(null);
+    setImageError('');
+
+    try {
+      const res = await fetch('/api/verify-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: targetImage,
+          title: formData.name || formData.title,
+          description: formData.description,
+          category: formData.category
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.verified && data.token) {
+        setVerificationStatus('verified');
+        setVerificationMessage('Image Verified — You can proceed.');
+        setVerificationReason(data.reason || '');
+        setVerificationToken(data.token);
+        setVerifiedImageSrc(targetImage);
+      } else if (res.status === 503 || data.unavailable) {
+        setVerificationStatus('unavailable');
+        setVerificationMessage('Verification is temporarily unavailable. Please try again.');
+        setVerificationReason(data.error || 'The image verification service could not be reached.');
+      } else {
+        setVerificationStatus('failed');
+        setVerificationMessage('Image verification failed. Please upload a clearer, genuine product photo.');
+        setVerificationReason(data.reason || data.error || 'The image does not meet quality requirements.');
+      }
+    } catch (err) {
+      setVerificationStatus('unavailable');
+      setVerificationMessage('Verification is temporarily unavailable. Please try again.');
+      setVerificationReason(err.message || 'Network error contacting verification endpoint.');
+    }
+  };
+
+  // Handle file uploads with type & size validation and ready for verification
   const handleFileSelect = (e) => {
     setImageError('');
     const files = Array.from(e.target.files || []);
@@ -210,7 +264,14 @@ export const Sell = () => {
       reader.onload = (loadEvent) => {
         const dataUrl = loadEvent.target?.result;
         if (dataUrl) {
-          setImages((prev) => (prev.length < MAX_IMAGES ? [...prev, dataUrl] : prev));
+          setImages((prev) => {
+            if (prev.includes(dataUrl)) return prev;
+            return prev.length < MAX_IMAGES ? [...prev, dataUrl] : prev;
+          });
+          // Show "Verify Product Image" button ready for verification
+          setVerificationStatus('idle');
+          setVerificationToken(null);
+          setVerifiedImageSrc(null);
         }
       };
       reader.readAsDataURL(file);
@@ -221,7 +282,7 @@ export const Sell = () => {
     }
   };
 
-  // Add image by URL
+  // Add image by URL and ready for verification
   const handleAddUrlImage = () => {
     setImageError('');
     const trimmed = customImageUrl.trim();
@@ -232,14 +293,40 @@ export const Sell = () => {
       return;
     }
 
-    setImages((prev) => [...prev, trimmed]);
+    setImages((prev) => {
+      if (prev.includes(trimmed)) return prev;
+      return [...prev, trimmed];
+    });
+    setVerificationStatus('idle');
+    setVerificationToken(null);
+    setVerifiedImageSrc(null);
     setCustomImageUrl('');
   };
 
-  // Remove individual image
+  // Remove individual image and invalidate/reset verification if primary cover removed
   const handleRemoveImage = (indexToRemove) => {
-    setImages((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    const remaining = images.filter((_, idx) => idx !== indexToRemove);
+    setImages(remaining);
     setImageError('');
+
+    if (indexToRemove === 0) {
+      setVerificationStatus('idle');
+      setVerificationMessage('');
+      setVerificationReason('');
+      setVerificationToken(null);
+      setVerifiedImageSrc(null);
+    }
+  };
+
+  // Select curated preset and ready for verification
+  const handleSelectPreset = (presetUrl) => {
+    setImageError('');
+    if (images.length < MAX_IMAGES && !images.includes(presetUrl)) {
+      setImages((prev) => [...prev, presetUrl]);
+      setVerificationStatus('idle');
+      setVerificationToken(null);
+      setVerifiedImageSrc(null);
+    }
   };
 
   // Main Form Submission Handler
@@ -274,6 +361,27 @@ export const Sell = () => {
     }
     if (!images.length) {
       setFormError('Please upload at least one photograph for the listing preview.');
+      return;
+    }
+    if (verificationStatus === 'verifying') {
+      setFormError('Product image verification is currently in progress. Please wait for verification to complete.');
+      return;
+    }
+    if (verificationStatus === 'failed') {
+      setFormError('Image verification failed. Please upload a clearer, genuine product photo before proceeding.');
+      return;
+    }
+    if (verificationStatus === 'unavailable') {
+      setFormError('Verification is temporarily unavailable. Please try again.');
+      return;
+    }
+    if (verificationStatus === 'idle') {
+      setFormError('Image verification is required. Please verify your product image before submitting.');
+      if (images.length > 0) runImageVerification(images[0]);
+      return;
+    }
+    if (verificationStatus !== 'verified' || !verificationToken) {
+      setFormError('Image verification is required. Please ensure your product photo passes verification before proceeding.');
       return;
     }
     if (!formData.description.trim()) {
@@ -363,6 +471,7 @@ export const Sell = () => {
           isAuction: false,
           images: images,
           image: images[0],
+          verificationToken: verificationToken,
           description: formData.description.trim(),
           materials: formData.materials.trim(),
           dimensions: formData.dimensions.trim(),
@@ -401,6 +510,7 @@ export const Sell = () => {
           endTimestamp: endTimestamp,
           images: images,
           image: images[0],
+          verificationToken: verificationToken,
           description: formData.description.trim(),
           dimensions: formData.dimensions.trim(),
           materials: formData.materials.trim(),
@@ -445,6 +555,11 @@ export const Sell = () => {
       description: ''
     }));
     setImages([]);
+    setVerificationStatus('idle');
+    setVerificationMessage('');
+    setVerificationReason('');
+    setVerificationToken(null);
+    setVerifiedImageSrc(null);
   };
 
   return (
@@ -983,7 +1098,15 @@ export const Sell = () => {
                         backgroundColor: 'var(--surface-secondary)'
                       }}
                     >
-                      <img src={imgUrl} alt={`Lot photo ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img
+                        src={typeof imgUrl === 'string' ? imgUrl : (imgUrl?.url || '')}
+                        alt={`Lot photo ${idx + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
 
                       {idx === 0 && (
                         <span
@@ -1101,11 +1224,7 @@ export const Sell = () => {
                     <button
                       key={pIdx}
                       type="button"
-                      onClick={() => {
-                        if (images.length < MAX_IMAGES && !images.includes(preset.url)) {
-                          setImages((prev) => [...prev, preset.url]);
-                        }
-                      }}
+                      onClick={() => handleSelectPreset(preset.url)}
                       style={{
                         fontSize: '11px',
                         padding: '3px 8px',
@@ -1121,6 +1240,213 @@ export const Sell = () => {
                   ))}
                 </div>
               </div>
+
+              {/* AI Image Verification Status Banner */}
+              {images.length === 0 ? (
+                <div
+                  data-testid="image-verification-placeholder"
+                  style={{
+                    marginTop: '20px',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '14px 16px',
+                    border: '1px dashed var(--border-color)',
+                    backgroundColor: 'var(--surface-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  <ShieldCheck size={18} style={{ color: 'var(--accent-burgundy)', flexShrink: 0 }} />
+                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Attach or upload at least one product photo to enable Groq Vision AI image verification.
+                  </span>
+                </div>
+              ) : (
+                <div
+                  data-testid="image-verification-card"
+                  style={{
+                    marginTop: '20px',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '16px 18px',
+                    border:
+                      verificationStatus === 'verifying'
+                        ? '1px solid var(--border-color)'
+                        : verificationStatus === 'verified'
+                        ? '1px solid #86efac'
+                        : verificationStatus === 'failed'
+                        ? '1px solid #fca5a5'
+                        : verificationStatus === 'unavailable'
+                        ? '1px solid #fde047'
+                        : '1.5px solid var(--accent-burgundy)',
+                    backgroundColor:
+                      verificationStatus === 'verifying'
+                        ? 'var(--surface-secondary)'
+                        : verificationStatus === 'verified'
+                        ? '#f0fdf4'
+                        : verificationStatus === 'failed'
+                        ? '#fef2f2'
+                        : verificationStatus === 'unavailable'
+                        ? '#fefce8'
+                        : 'var(--surface-secondary)',
+                    transition: 'all 200ms ease'
+                  }}
+                >
+                  {/* Status 0: Idle / Ready to verify */}
+                  {verificationStatus === 'idle' && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flex: 1, minWidth: '220px' }}>
+                        <ShieldCheck size={20} style={{ color: 'var(--accent-burgundy)', marginTop: '2px', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            Product Image Verification Required
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            Analyze your photo using Groq Vision AI for catalog clarity and authenticity indicators before submitting.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="verify-product-image-button"
+                        onClick={() => runImageVerification(images[0])}
+                        className="btn btn-burgundy btn-sm"
+                        style={{
+                          fontSize: '12px',
+                          padding: '7px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        <Sparkles size={14} />
+                        <span>Verify Product Image</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Status 1: Verifying */}
+                  {verificationStatus === 'verifying' && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                      <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent-burgundy)', marginTop: '2px', flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Verifying your product image...
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                          Analyzing resolution, physical product depiction, and manipulation markers with Groq Vision AI.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status 2: Verified */}
+                  {verificationStatus === 'verified' && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <CheckCircle2 size={20} style={{ color: '#16a34a', flexShrink: 0 }} />
+                          <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#15803d' }}>
+                            Image Verified — You can proceed.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => runImageVerification(images[0])}
+                          className="btn btn-outline btn-sm"
+                          style={{ fontSize: '11px', padding: '3px 8px', color: '#166534', borderColor: '#86efac' }}
+                        >
+                          <RefreshCw size={11} style={{ marginRight: '4px' }} />
+                          Re-verify
+                        </button>
+                      </div>
+                      <p style={{ margin: '6px 0 0 30px', fontSize: '11px', color: '#166534', lineHeight: 1.4 }}>
+                        {verificationReason || 'Photograph meets catalog clarity and physical product criteria.'}
+                      </p>
+                      <div style={{ margin: '6px 0 0 30px', fontSize: '10px', color: 'var(--text-secondary)' }}>
+                        Note: Verification assesses listing quality and manipulation indicators; it does not claim to conclusively prove physical authenticity.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status 3: Failed */}
+                  {verificationStatus === 'failed' && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <AlertCircle size={20} style={{ color: '#dc2626', marginTop: '2px', flexShrink: 0 }} />
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#b91c1c' }}>
+                            Image verification failed. Please upload a clearer, genuine product photo.
+                          </span>
+                          {verificationReason && (
+                            <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#991b1b', lineHeight: 1.4 }}>
+                              {verificationReason}
+                            </p>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            >
+                              <Upload size={13} />
+                              <span>Replace Photo</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runImageVerification(images[0])}
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            >
+                              <RefreshCw size={13} />
+                              <span>Retry Verification</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImage(0)}
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px', color: '#dc2626', borderColor: '#fca5a5' }}
+                            >
+                              <Trash2 size={13} />
+                              <span>Remove Photo</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status 4: Unavailable */}
+                  {verificationStatus === 'unavailable' && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <AlertTriangle size={20} style={{ color: '#ca8a04', marginTop: '2px', flexShrink: 0 }} />
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#854d0e' }}>
+                            Verification is temporarily unavailable. Please try again.
+                          </span>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#713f12', lineHeight: 1.4 }}>
+                            {verificationReason || 'The image verification service did not respond. Listing submission requires verification.'}
+                          </p>
+                          <div style={{ marginTop: '10px' }}>
+                            <button
+                              type="button"
+                              onClick={() => runImageVerification(images[0])}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            >
+                              <RefreshCw size={13} />
+                              <span>Retry Verification</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {imageError && (
                 <div style={{ marginTop: '10px', color: 'var(--error-color)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1264,26 +1590,48 @@ export const Sell = () => {
                 <span>Submitted with status <strong>Pending Approval</strong></span>
               </div>
 
-              <button
-                type="submit"
-                className="btn btn-burgundy"
-                disabled={isSubmitting}
-                style={{ minWidth: '220px', height: '46px', fontWeight: 600 }}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Publishing Listing...</span>
-                  </>
-                ) : (
-                  <>
-                    {sellingOption === 'auction' ? <Gavel size={16} /> : <ShoppingBag size={16} />}
-                    <span>
-                      {sellingOption === 'auction' ? 'Submit Live Auction Lot' : 'Submit Shop Product'}
-                    </span>
-                  </>
-                )}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                <button
+                  type="submit"
+                  className="btn btn-burgundy"
+                  disabled={isSubmitting}
+                  style={{
+                    minWidth: '220px',
+                    height: '46px',
+                    fontWeight: 600,
+                    opacity: (isSubmitting || images.length === 0 || verificationStatus !== 'verified') ? 0.55 : 1,
+                    cursor: (isSubmitting || images.length === 0 || verificationStatus !== 'verified') ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Publishing Listing...</span>
+                    </>
+                  ) : (
+                    <>
+                      {sellingOption === 'auction' ? <Gavel size={16} /> : <ShoppingBag size={16} />}
+                      <span>
+                        {sellingOption === 'auction' ? 'Submit Live Auction Lot' : 'Submit Shop Product'}
+                      </span>
+                    </>
+                  )}
+                </button>
+
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {images.length === 0
+                    ? 'Upload and verify a product photo to proceed'
+                    : verificationStatus === 'idle'
+                    ? 'Click "Verify Product Image" above to proceed'
+                    : verificationStatus === 'verifying'
+                    ? 'Verifying image with Groq Vision AI...'
+                    : verificationStatus === 'failed'
+                    ? 'Photo rejected — upload a replacement to proceed'
+                    : verificationStatus === 'unavailable'
+                    ? 'Verification unavailable — retry to proceed'
+                    : 'Image verified • Ready for submission'}
+                </span>
+              </div>
             </div>
           </form>
 
@@ -1361,9 +1709,13 @@ export const Sell = () => {
               <div style={{ width: '100%', aspectRatio: '4/3', backgroundColor: 'var(--surface-secondary)', position: 'relative' }}>
                 {images.length > 0 ? (
                   <img
-                    src={images[0]}
+                    src={typeof images[0] === 'string' ? images[0] : (images[0]?.url || '')}
                     alt="Preview"
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.style.display = 'none';
+                    }}
                   />
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>

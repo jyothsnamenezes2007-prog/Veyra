@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import {
   getAuctions,
   getAuctionById,
@@ -9,26 +8,24 @@ import {
   insertProduct,
   updateProduct,
   deleteProduct,
-  deleteCustomAuction,
   saveDatabase,
   getProxyConfigs,
   getProxyConfigByUser,
   upsertProxyConfig,
   updateProxyConfig,
   getCommentsByAuction,
-  insertComment,
-  getPayments,
-  getPaymentById,
-  getPaymentByAuctionId,
-  insertPayment,
-  updatePayment
+  insertComment
 } from './db.js';
 import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
 import { verifyGeminiModel } from './gemini.js';
-import { broadcastEvent, getActiveSocketCount } from './socket.js';
+import {
+  verifyProductImage,
+  isImageAuthorized,
+  invalidateImageVerification
+} from './imageVerification.js';
 
-// Connected SSE clients (maintained for seamless backward-compatibility)
+// Connected SSE clients
 const sseClients = new Set();
 
 // In-memory mutex locks for bidding to prevent race conditions
@@ -53,28 +50,8 @@ async function withAuctionLock(auctionId, fn) {
   }
 }
 
-// Duplicate submission protection cache (idempotency token & rapid submission de-bounce)
-const recentSubmissions = new Map();
-function cleanRecentSubmissions() {
-  const now = Date.now();
-  for (const [k, v] of recentSubmissions.entries()) {
-    if (now - v.timestamp > 30000) {
-      recentSubmissions.delete(k);
-    }
-  }
-}
-
-/**
- * Real-time Broadcast Service
- * Broadcasts via Socket.IO (primary WebSocket real-time engine)
- * and mirrors to any legacy SSE listeners for full backward-compatibility.
- */
-export function broadcastRealtimeEvent(type, payload = {}) {
-  // 1. Deliver to Socket.IO clients (global feed and targeted auction room)
-  const auctionId = payload.auctionId || payload.auction?.id || null;
-  broadcastEvent(type, payload, auctionId);
-
-  // 2. Mirror to legacy SSE listeners
+// Broadcast SSE event to all connected clients
+export function broadcastSSE(type, payload) {
   const message = `event: message\ndata: ${JSON.stringify({ type, payload, serverTime: Date.now() })}\n\n`;
   for (const client of sseClients) {
     try {
@@ -85,12 +62,9 @@ export function broadcastRealtimeEvent(type, payload = {}) {
   }
 }
 
-// Export as both broadcastRealtimeEvent and backward-compatible broadcastSSE alias
-export const broadcastSSE = broadcastRealtimeEvent;
-
-// Hook scheduler events to real-time broadcast
+// Hook scheduler events to SSE broadcast
 scheduler.on('event', ({ type, payload }) => {
-  broadcastRealtimeEvent(type, payload);
+  broadcastSSE(type, payload);
 });
 
 // Helper to parse JSON body from incoming Node request
@@ -157,10 +131,49 @@ export async function handleApiRequest(req, res) {
       status: 'ok',
       serverTime: Date.now(),
       schedulerRunning: scheduler.isRunning,
-      activeSockets: getActiveSocketCount(),
-      activeSseClients: sseClients.size
+      activeClients: sseClients.size
     });
     return true;
+  }
+
+  // 2b. POST /api/verify-image (Verify uploaded product image via Groq vision API)
+  if (pathname === '/api/verify-image' && method === 'POST') {
+    try {
+      const data = await parseJsonBody(req);
+      if (!data.image) {
+        sendJson(res, 400, {
+          success: false,
+          verified: false,
+          error: 'No image provided for verification.'
+        });
+        return true;
+      }
+
+      const result = await verifyProductImage(data.image, {
+        title: data.title,
+        description: data.description,
+        category: data.category
+      });
+      const statusCode = result.success ? 200 : (result.unavailable ? 503 : 400);
+      sendJson(res, statusCode, result);
+      return true;
+    } catch (err) {
+      if (err.message && err.message.includes('too large')) {
+        sendJson(res, 400, {
+          success: false,
+          verified: false,
+          error: 'Image exceeds the maximum allowed size of 5MB.'
+        });
+        return true;
+      }
+      sendJson(res, 500, {
+        success: false,
+        verified: false,
+        unavailable: true,
+        error: 'Verification is temporarily unavailable. Please try again.'
+      });
+      return true;
+    }
   }
 
   // 3. GET /api/auctions
@@ -204,24 +217,6 @@ export async function handleApiRequest(req, res) {
       const startingBid = Number(data.startingBid);
       if (isNaN(startingBid) || startingBid <= 0) {
         sendJson(res, 400, { success: false, error: 'Starting bid must be a valid positive amount.' });
-        return true;
-      }
-
-      cleanRecentSubmissions();
-
-      // Check clientSubmissionId idempotency
-      const clientSubmissionId = data.clientSubmissionId || data.submissionId;
-      if (clientSubmissionId && recentSubmissions.has(clientSubmissionId)) {
-        const cached = recentSubmissions.get(clientSubmissionId);
-        sendJson(res, 200, { success: true, auction: cached.auction, duplicatePrevented: true });
-        return true;
-      }
-
-      // Check rapid double-click duplicate (same seller, title, startingBid within 4 seconds)
-      const rapidKey = `auc_${data.sellerId || data.seller}_${data.name.trim().toLowerCase()}_${startingBid}`;
-      const recentMatch = recentSubmissions.get(rapidKey);
-      if (recentMatch && Date.now() - recentMatch.timestamp < 4000) {
-        sendJson(res, 200, { success: true, auction: recentMatch.auction, duplicatePrevented: true });
         return true;
       }
 
@@ -279,6 +274,22 @@ export async function handleApiRequest(req, res) {
 
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
+
+      // Authoritative image verification check: If an image is provided, it must be verified
+      if (primaryImage) {
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        if (!authorized) {
+          const verifyRes = await verifyProductImage(primaryImage);
+          if (!verifyRes.verified) {
+            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+              success: false,
+              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
+            });
+            return true;
+          }
+          authorized = true;
+        }
+      }
 
       const lotId = data.id || ('auc-lot-' + Date.now());
       const prodId = data.productId || ('prod-' + Date.now());
@@ -349,11 +360,6 @@ export async function handleApiRequest(req, res) {
 
       insertAuction(newAuction);
       insertProduct(newProduct);
-
-      if (clientSubmissionId) {
-        recentSubmissions.set(clientSubmissionId, { timestamp: Date.now(), auction: newAuction });
-      }
-      recentSubmissions.set(rapidKey, { timestamp: Date.now(), auction: newAuction });
 
       broadcastSSE('AUCTION_CREATED', { auction: newAuction, product: newProduct });
       sendJson(res, 201, { success: true, auction: newAuction, product: newProduct });
@@ -859,307 +865,6 @@ export async function handleApiRequest(req, res) {
     }
   }
 
-  // ── Payment Endpoints (Razorpay Video Call Settlement) ──────────────────────
-
-  // 9a. POST /api/payments/create-order
-  if (pathname === '/api/payments/create-order' && method === 'POST') {
-    try {
-      const body = await parseJsonBody(req);
-      const { auctionId, userId } = body;
-
-      if (!auctionId) {
-        sendJson(res, 400, { success: false, error: 'auctionId is required to create a payment order.' });
-        return true;
-      }
-
-      // Production gate: Strictly block development test auction in production
-      if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
-        sendJson(res, 403, { success: false, error: 'Development test auctions cannot be accessed in production.' });
-        return true;
-      }
-
-      const auction = getAuctionById(auctionId);
-      if (!auction) {
-        sendJson(res, 404, { success: false, error: `Auction "${auctionId}" not found.` });
-        return true;
-      }
-
-      // Check if already paid to prevent duplicate payments
-      const existingPayment = getPaymentByAuctionId(auctionId);
-      if (existingPayment || auction.paymentStatus === 'completed') {
-        sendJson(res, 400, {
-          success: false,
-          alreadyPaid: true,
-          error: 'This auction lot consultation has already been successfully settled and paid.',
-          paymentId: existingPayment?.paymentId || auction.paymentId
-        });
-        return true;
-      }
-
-      // Authoritative payment amount from winning bid / hammer price
-      const authoritativeAmount =
-        auction.id === 'auc-dev-test'
-          ? 100
-          : Math.round(
-              Number(auction.winningBid || auction.winner?.amount || auction.currentBid || auction.startingBid || 0)
-            );
-
-      if (authoritativeAmount <= 0) {
-        sendJson(res, 400, {
-          success: false,
-          error: 'Cannot create payment order: No valid winning bid amount found on this auction lot.'
-        });
-        return true;
-      }
-
-      const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '';
-      const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
-
-      const isLiveKeyConfigured =
-        keyId &&
-        keySecret &&
-        keyId.startsWith('rzp_') &&
-        keySecret !== 'sample_secret_key_change_me' &&
-        !keySecret.includes('change_me');
-
-      if (isLiveKeyConfigured) {
-        // Genuine Razorpay Orders API call
-        const amountInPaise = authoritativeAmount * 100;
-        const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
-
-        const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Basic ${basicAuth}`
-          },
-          body: JSON.stringify({
-            amount: amountInPaise,
-            currency: 'INR',
-            receipt: `rcpt_${auctionId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}_${Date.now().toString().slice(-6)}`,
-            notes: {
-              auctionId,
-              userId: userId || 'collector',
-              lotTitle: auction.name || 'Post-Auction Consultation'
-            }
-          })
-        });
-
-        const rzpData = await rzpRes.json();
-        if (!rzpRes.ok) {
-          console.error('[Razorpay Order Creation Error]:', rzpData);
-          sendJson(res, 502, {
-            success: false,
-            error: rzpData.error?.description || 'Razorpay order creation failed.'
-          });
-          return true;
-        }
-
-        insertPayment({
-          id: `pay_rec_${Date.now()}`,
-          orderId: rzpData.id,
-          auctionId,
-          userId,
-          amount: authoritativeAmount,
-          currency: 'INR',
-          status: 'created',
-          createdAt: Date.now()
-        });
-
-        sendJson(res, 200, {
-          success: true,
-          orderId: rzpData.id,
-          amount: authoritativeAmount,
-          currency: 'INR',
-          keyId,
-          auctionName: auction.name,
-          sellerName: auction.seller || auction.maker
-        });
-        return true;
-      }
-
-      // Safe test/simulation fallback when placeholder keys are used in local development
-      const simOrderId = `order_sim_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      insertPayment({
-        id: `pay_rec_${Date.now()}`,
-        orderId: simOrderId,
-        auctionId,
-        userId,
-        amount: authoritativeAmount,
-        currency: 'INR',
-        status: 'created',
-        createdAt: Date.now(),
-        isSimulation: true
-      });
-
-      sendJson(res, 200, {
-        success: true,
-        orderId: simOrderId,
-        amount: authoritativeAmount,
-        currency: 'INR',
-        keyId: keyId || 'rzp_test_placeholder',
-        isSimulation: true,
-        auctionName: auction.name,
-        sellerName: auction.seller || auction.maker
-      });
-      return true;
-    } catch (err) {
-      console.error('[Payment Order Error]:', err);
-      sendJson(res, 500, { success: false, error: err.message || 'Server error creating payment order.' });
-      return true;
-    }
-  }
-
-  // 9b. POST /api/payments/verify
-  if (pathname === '/api/payments/verify' && method === 'POST') {
-    try {
-      const body = await parseJsonBody(req);
-      const { razorpay_order_id, razorpay_payment_id, razorpay_signature, auctionId, userId } = body;
-
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !auctionId) {
-        sendJson(res, 400, {
-          success: false,
-          error: 'Missing required payment verification parameters (order_id, payment_id, signature, auctionId).'
-        });
-        return true;
-      }
-
-      // Production gate: Strictly block development test auction in production
-      if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
-        sendJson(res, 403, { success: false, error: 'Development test payment verification blocked in production.' });
-        return true;
-      }
-
-      const auction = getAuctionById(auctionId);
-      if (!auction) {
-        sendJson(res, 404, { success: false, error: `Auction "${auctionId}" not found.` });
-        return true;
-      }
-
-      // Prevent duplicate verification/payments
-      const existing = getPaymentByAuctionId(auctionId);
-      if (existing && existing.status === 'completed') {
-        sendJson(res, 200, {
-          success: true,
-          alreadyPaid: true,
-          message: 'Payment has already been verified and recorded.',
-          paymentId: existing.paymentId
-        });
-        return true;
-      }
-
-      const keySecret = process.env.RAZORPAY_KEY_SECRET || '';
-      let isAuthentic = false;
-
-      if (razorpay_order_id.startsWith('order_sim_')) {
-        // Simulation verification for test environments without live credentials
-        isAuthentic = Boolean(razorpay_signature);
-      } else if (keySecret) {
-        // Cryptographic HMAC SHA-256 verification
-        const expectedSignature = crypto
-          .createHmac('sha256', keySecret)
-          .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-          .digest('hex');
-
-        try {
-          const bufExpected = Buffer.from(expectedSignature, 'utf8');
-          const bufActual = Buffer.from(razorpay_signature, 'utf8');
-          isAuthentic = bufExpected.length === bufActual.length && crypto.timingSafeEqual(bufExpected, bufActual);
-        } catch (e) {
-          isAuthentic = false;
-        }
-      }
-
-      if (!isAuthentic) {
-        console.warn(`[Payment Verification Failed] Order: ${razorpay_order_id}, Payment: ${razorpay_payment_id}`);
-        sendJson(res, 400, {
-          success: false,
-          error: 'Payment verification failed: Invalid cryptographic signature.'
-        });
-        return true;
-      }
-
-      const now = Date.now();
-      const paymentRecord =
-        updatePayment(razorpay_order_id, {
-          paymentId: razorpay_payment_id,
-          signature: razorpay_signature,
-          status: 'completed',
-          verifiedAt: now
-        }) ||
-        insertPayment({
-          id: `pay_${now}`,
-          orderId: razorpay_order_id,
-          paymentId: razorpay_payment_id,
-          signature: razorpay_signature,
-          auctionId,
-          userId,
-          status: 'completed',
-          verifiedAt: now
-        });
-
-      // Update auction record in database
-      const updatedAuction = updateAuction(auctionId, {
-        paymentStatus: 'completed',
-        paymentId: razorpay_payment_id,
-        paidAt: now,
-        paidAmount: paymentRecord?.amount
-      });
-
-      // Broadcast real-time payment confirmation across all connected peers
-      broadcastRealtimeEvent('PAYMENT_CONFIRMED', {
-        auctionId,
-        paymentId: razorpay_payment_id,
-        amount: paymentRecord?.amount,
-        userId,
-        verifiedAt: now
-      });
-
-      console.log(`[Payment Verified] Lot #${auctionId} settled for ₹${paymentRecord?.amount || ''} (Payment ID: ${razorpay_payment_id})`);
-
-      sendJson(res, 200, {
-        success: true,
-        message: 'Payment signature verified and settlement confirmed successfully.',
-        paymentId: razorpay_payment_id,
-        verifiedAt: now,
-        amount: paymentRecord?.amount,
-        auction: updatedAuction
-      });
-      return true;
-    } catch (err) {
-      console.error('[Payment Verification Error]:', err);
-      sendJson(res, 500, { success: false, error: err.message || 'Server error verifying payment.' });
-      return true;
-    }
-  }
-
-  // 9c. GET /api/payments/status
-  if (pathname === '/api/payments/status' && method === 'GET') {
-    const auctionId = url.searchParams.get('auctionId');
-    if (!auctionId) {
-      sendJson(res, 400, { success: false, error: 'auctionId query parameter is required.' });
-      return true;
-    }
-
-    // Production gate: Strictly block development test auction in production
-    if (auctionId === 'auc-dev-test' && process.env.NODE_ENV === 'production') {
-      sendJson(res, 403, { success: false, error: 'Test auction status unavailable in production.' });
-      return true;
-    }
-
-    const payment = getPaymentByAuctionId(auctionId);
-    const auction = getAuctionById(auctionId);
-    const isPaid = Boolean(payment?.status === 'completed' || auction?.paymentStatus === 'completed');
-    sendJson(res, 200, {
-      success: true,
-      paid: isPaid,
-      paymentId: payment?.paymentId || auction?.paymentId || null,
-      amount: payment?.amount || auction?.paidAmount || null,
-      paidAt: payment?.verifiedAt || auction?.paidAt || null
-    });
-    return true;
-  }
-
   // 10. GET /api/products
   if (pathname === '/api/products' && method === 'GET') {
     const products = getProducts();
@@ -1187,26 +892,24 @@ export async function handleApiRequest(req, res) {
         return true;
       }
 
-      cleanRecentSubmissions();
-
-      // Check clientSubmissionId idempotency
-      const clientSubmissionId = data.clientSubmissionId || data.submissionId;
-      if (clientSubmissionId && recentSubmissions.has(clientSubmissionId)) {
-        const cached = recentSubmissions.get(clientSubmissionId);
-        sendJson(res, 200, { success: true, product: cached.product, duplicatePrevented: true });
-        return true;
-      }
-
-      // Check rapid double-click duplicate (same seller, title, price within 4 seconds)
-      const rapidKey = `prod_${data.sellerId || data.seller}_${data.name.trim().toLowerCase()}_${price}`;
-      const recentMatch = recentSubmissions.get(rapidKey);
-      if (recentMatch && Date.now() - recentMatch.timestamp < 4000) {
-        sendJson(res, 200, { success: true, product: recentMatch.product, duplicatePrevented: true });
-        return true;
-      }
-
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
+
+      // Authoritative image verification check: If an image is provided, it must be verified
+      if (primaryImage) {
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        if (!authorized) {
+          const verifyRes = await verifyProductImage(primaryImage);
+          if (!verifyRes.verified) {
+            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+              success: false,
+              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
+            });
+            return true;
+          }
+          authorized = true;
+        }
+      }
 
       const newProduct = {
         id: data.id || ('prod-custom-' + Date.now()),
@@ -1233,11 +936,6 @@ export async function handleApiRequest(req, res) {
       };
 
       insertProduct(newProduct);
-
-      if (clientSubmissionId) {
-        recentSubmissions.set(clientSubmissionId, { timestamp: Date.now(), product: newProduct });
-      }
-      recentSubmissions.set(rapidKey, { timestamp: Date.now(), product: newProduct });
 
       broadcastSSE('PRODUCT_CREATED', { product: newProduct });
       sendJson(res, 201, { success: true, product: newProduct });
@@ -1284,26 +982,9 @@ export async function handleApiRequest(req, res) {
   const prodDeleteMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)(?:\/delete)?$/);
   if (prodDeleteMatch && (method === 'DELETE' || (method === 'POST' && pathname.endsWith('/delete')))) {
     const id = prodDeleteMatch[1];
-
-    // CRITICAL SAFETY CHECK: NEVER allow deletion of real production auctions
-    if (id === 'auc-1' || id === 'up-2' || id === 'auc-dev-test') {
-      sendJson(res, 403, { success: false, error: 'Cannot delete protected live auction records.' });
-      return true;
-    }
-
-    let product = getProductById(id);
-    let isAuctionRecord = false;
+    const product = getProductById(id);
     if (!product) {
-      const auctions = getAuctions();
-      const matched = auctions.find((a) => a.id === id || a.productId === id);
-      if (matched) {
-        product = matched;
-        isAuctionRecord = true;
-      }
-    }
-
-    if (!product) {
-      sendJson(res, 404, { success: false, error: 'Product or listing not found.' });
+      sendJson(res, 404, { success: false, error: 'Product not found.' });
       return true;
     }
 
@@ -1319,7 +1000,7 @@ export async function handleApiRequest(req, res) {
     const isOwner = Boolean(
       (userId && product.sellerId && String(product.sellerId) === String(userId)) ||
       (userName && product.seller && product.seller.toLowerCase().trim() === userName.toLowerCase().trim()) ||
-      (userName && product.maker && product.maker.toLowerCase().trim() === userName.toLowerCase().trim())
+      (!product.sellerId && !userId)
     );
 
     if (!isOwner) {
@@ -1338,16 +1019,9 @@ export async function handleApiRequest(req, res) {
     }
 
     // Perform safe deletion (historical auctions, bids, and orders remain intact)
-    const removedProduct = deleteProduct(id);
-    const removedAuction = deleteCustomAuction(id);
-    broadcastRealtimeEvent('PRODUCT_DELETED', { productId: id });
+    const removed = deleteProduct(id);
     broadcastSSE('PRODUCT_DELETED', { productId: id });
-    sendJson(res, 200, {
-      success: true,
-      message: 'Product successfully deleted.',
-      productId: id,
-      removed: removedProduct || removedAuction
-    });
+    sendJson(res, 200, { success: true, message: 'Product successfully deleted.', productId: id, removed });
     return true;
   }
 
