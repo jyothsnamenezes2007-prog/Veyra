@@ -19,8 +19,9 @@ import {
 import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
 import { verifyGeminiModel } from './gemini.js';
+import { broadcastEvent, getActiveSocketCount } from './socket.js';
 
-// Connected SSE clients
+// Connected SSE clients (maintained for seamless backward-compatibility)
 const sseClients = new Set();
 
 // In-memory mutex locks for bidding to prevent race conditions
@@ -45,8 +46,17 @@ async function withAuctionLock(auctionId, fn) {
   }
 }
 
-// Broadcast SSE event to all connected clients
-export function broadcastSSE(type, payload) {
+/**
+ * Real-time Broadcast Service
+ * Broadcasts via Socket.IO (primary WebSocket real-time engine)
+ * and mirrors to any legacy SSE listeners for full backward-compatibility.
+ */
+export function broadcastRealtimeEvent(type, payload = {}) {
+  // 1. Deliver to Socket.IO clients (global feed and targeted auction room)
+  const auctionId = payload.auctionId || payload.auction?.id || null;
+  broadcastEvent(type, payload, auctionId);
+
+  // 2. Mirror to legacy SSE listeners
   const message = `event: message\ndata: ${JSON.stringify({ type, payload, serverTime: Date.now() })}\n\n`;
   for (const client of sseClients) {
     try {
@@ -57,9 +67,12 @@ export function broadcastSSE(type, payload) {
   }
 }
 
-// Hook scheduler events to SSE broadcast
+// Export as both broadcastRealtimeEvent and backward-compatible broadcastSSE alias
+export const broadcastSSE = broadcastRealtimeEvent;
+
+// Hook scheduler events to real-time broadcast
 scheduler.on('event', ({ type, payload }) => {
-  broadcastSSE(type, payload);
+  broadcastRealtimeEvent(type, payload);
 });
 
 // Helper to parse JSON body from incoming Node request
@@ -126,7 +139,8 @@ export async function handleApiRequest(req, res) {
       status: 'ok',
       serverTime: Date.now(),
       schedulerRunning: scheduler.isRunning,
-      activeClients: sseClients.size
+      activeSockets: getActiveSocketCount(),
+      activeSseClients: sseClients.size
     });
     return true;
   }

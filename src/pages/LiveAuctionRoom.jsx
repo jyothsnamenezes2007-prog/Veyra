@@ -23,6 +23,7 @@ import { useProducts } from '../context/ProductsContext';
 import { useAuth } from '../context/AuthContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../context/ToastContext';
+import { joinAuctionRoom, leaveAuctionRoom } from '../lib/socket';
 import { formatINR } from '../data/products';
 import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
@@ -125,10 +126,16 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
     }
   }, [minRequiredBid]);
 
-  // Synchronize floor comments from authoritative backend
+  // Synchronize floor comments from authoritative backend & join targeted Socket.IO room
   useEffect(() => {
-    if (auction?.id && fetchAuctionComments) {
-      fetchAuctionComments(auction.id);
+    if (auction?.id) {
+      if (fetchAuctionComments) {
+        fetchAuctionComments(auction.id);
+      }
+      joinAuctionRoom(auction.id);
+      return () => {
+        leaveAuctionRoom(auction.id);
+      };
     }
   }, [auction?.id, fetchAuctionComments]);
 
