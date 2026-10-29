@@ -2,25 +2,20 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock, Hammer, Heart } from 'lucide-react';
 import { formatINR } from '../data/products';
+import { getAuthoritativeAuctionStatus, formatAuctionCountdown } from '../data/auctions';
 import { useWishlist } from '../context/WishlistContext';
 
 export const AuctionCard = ({ auction, onOpenBidModal }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const { isInWishlist, toggleWishlist } = useWishlist();
 
-  const remaining = auction.remainingSeconds ?? 0;
-  const isLive = remaining > 0;
+  const authState = getAuthoritativeAuctionStatus(auction);
+  const remaining = authState.remainingSeconds;
+  const isLive = authState.isLive;
+  const isUpcoming = authState.isUpcoming;
+  const isEnded = authState.isEnded;
   const isFav = isInWishlist(auction.productId || auction.id);
-  const minNext = auction.currentBid + auction.minIncrement;
-
-  const formatCountdown = (totalSeconds) => {
-    if (totalSeconds <= 0) return 'Concluded';
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
-  };
+  const minNext = (auction.currentBid || 0) + (auction.minIncrement || 500);
 
   return (
     <article
@@ -63,7 +58,7 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
 
         {/* Live Badge Indicator */}
         <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 2 }}>
-          {auction.status === 'scheduled' || auction.status === 'upcoming' || (auction.startTimestamp && Date.now() < auction.startTimestamp && !isLive) ? (
+          {isUpcoming ? (
             <span
               style={{
                 fontSize: '10px',
@@ -275,7 +270,7 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
                   fontWeight: 600
                 }}
               >
-                Time Left
+                {isLive ? 'Time Left' : isUpcoming ? 'Opens In' : 'Auction State'}
               </span>
               <div
                 style={{
@@ -284,12 +279,12 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
                   gap: '4px',
                   fontSize: 'var(--text-xs)',
                   fontWeight: 700,
-                  color: isLive ? 'var(--accent-burgundy)' : 'var(--text-secondary)',
+                  color: isLive ? 'var(--accent-burgundy)' : isUpcoming ? '#856404' : 'var(--text-secondary)',
                   fontVariantNumeric: 'tabular-nums'
                 }}
               >
                 <Clock size={12} strokeWidth={2} />
-                <span>{formatCountdown(remaining)}</span>
+                <span>{formatAuctionCountdown(remaining)}</span>
               </div>
             </div>
           </div>
@@ -309,7 +304,7 @@ export const AuctionCard = ({ auction, onOpenBidModal }) => {
             }}
           >
             <Hammer size={14} />
-            <span>{isLive ? 'Join Live & Bid' : 'Auction Concluded'}</span>
+            <span>{isLive ? 'Join Live & Bid' : isUpcoming ? 'Preview Scheduled Lot' : 'View Result'}</span>
           </Link>
         </div>
       </div>

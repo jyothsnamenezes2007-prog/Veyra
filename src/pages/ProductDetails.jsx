@@ -27,7 +27,12 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuctions } from '../context/AuctionContext';
 import { formatINR } from '../data/products';
-import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
+import {
+  getMeetingAccess,
+  getAuthoritativeAuctionWinner,
+  getAuthoritativeAuctionStatus,
+  formatAuctionCountdown
+} from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 
@@ -121,49 +126,13 @@ export const ProductDetails = () => {
   const isFavorited = isInWishlist(product.id || authoritativeAuction?.id);
 
   // Auction lifecycle calculations
-  const now = Date.now();
-  const startTs = authoritativeAuction?.startTimestamp || authoritativeAuction?.scheduledTimestamp || 0;
-  const endTs = authoritativeAuction?.endTimestamp || authoritativeAuction?.endTime || 0;
-
-  const isLive =
-    authoritativeAuction &&
-    (authoritativeAuction.status === 'active' || authoritativeAuction.status === 'live' ||
-      (authoritativeAuction.approvalStatus === 'approved' && now >= startTs && now < endTs));
-
-  const isUpcoming =
-    authoritativeAuction &&
-    (authoritativeAuction.status === 'scheduled' || authoritativeAuction.status === 'upcoming' ||
-      (authoritativeAuction.approvalStatus === 'approved' && now < startTs));
-
-  const isEnded =
-    authoritativeAuction &&
-    (authoritativeAuction.status === 'ended' || (endTs > 0 && now >= endTs));
-
+  const authState = authoritativeAuction ? getAuthoritativeAuctionStatus(authoritativeAuction) : null;
+  const isLive = Boolean(authState && authState.isLive);
+  const isUpcoming = Boolean(authState && authState.isUpcoming);
+  const isEnded = Boolean(authState && authState.isEnded);
+  const remainingSeconds = authState ? authState.remainingSeconds : 0;
   const isPendingApproval =
     authoritativeAuction && authoritativeAuction.approvalStatus === 'pending';
-
-  // Countdown timer formatter
-  const formatCountdown = (totalSeconds) => {
-    if (totalSeconds <= 0) return 'Concluded';
-    const days = Math.floor(totalSeconds / 86400);
-    const hours = Math.floor((totalSeconds % 86400) / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const pad = (n) => String(n).padStart(2, '0');
-
-    if (days > 0) {
-      return `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
-    }
-    return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
-  };
-
-  const remainingSeconds = isEnded
-    ? 0
-    : isLive
-    ? Math.max(0, Math.floor((endTs - now) / 1000))
-    : isUpcoming
-    ? Math.max(0, Math.floor((startTs - now) / 1000))
-    : 0;
 
   // Meeting access check
   const meetingAccess = authoritativeAuction
@@ -682,7 +651,7 @@ export const ProductDetails = () => {
                       Time Remaining
                     </span>
                     <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                      {formatCountdown(remainingSeconds)}
+                      {formatAuctionCountdown(remainingSeconds)}
                     </div>
                   </div>
                 </div>
@@ -823,7 +792,7 @@ export const ProductDetails = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Clock size={15} color="#8C5A24" />
                     <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                      Bidding commences in: <strong>{formatCountdown(remainingSeconds)}</strong>
+                      Bidding commences in: <strong>{formatAuctionCountdown(remainingSeconds)}</strong>
                     </span>
                   </div>
                 </div>

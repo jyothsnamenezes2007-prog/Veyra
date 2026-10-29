@@ -24,6 +24,11 @@ import {
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+import { useProducts } from '../context/ProductsContext';
+import { useAuctions } from '../context/AuctionContext';
+import { formatINR } from '../data/products';
+import { getAuthoritativeAuctionStatus } from '../data/auctions';
 
 export const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -33,18 +38,158 @@ export const Navbar = () => {
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
   const { user, signOut } = useAuth();
+  const { addToast } = useToast();
+  const { products } = useProducts();
+  const { liveAuctions, upcomingAuctions, customAuctions } = useAuctions();
+
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const searchContainerRef = useRef(null);
 
   const navigate = useNavigate();
 
-  const handleSignOut = async () => {
-    setIsProfileOpen(false);
-    setIsMobileMenuOpen(false);
-    try {
-      await signOut();
-    } catch (err) {
-      console.warn('Sign out error:', err);
+  // Compute search suggestions across shop products and auctions with exact match prioritization
+  const suggestions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    // Valid shop items
+    const shopItems = (products || [])
+      .filter((p) => !p.isAuction && p.type !== 'auction' && p.status !== 'deleted' && (!p.listingStatus || p.listingStatus === 'active'))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        seller: p.seller,
+        description: p.description || '',
+        image: p.image,
+        price: p.price,
+        type: 'shop',
+        badge: 'Shop Object',
+        badgeBg: 'var(--badge-shipping-bg)',
+        badgeColor: 'var(--badge-shipping-text)',
+        url: `/product/${p.id}`
+      }));
+
+    // Valid auction items
+    const auctionItems = [];
+    const seenIds = new Set();
+    [...(liveAuctions || []), ...(upcomingAuctions || []), ...(customAuctions || [])].forEach((a) => {
+      if (!a || !a.id || seenIds.has(a.id)) return;
+      if (a.status === 'deleted' || a.status === 'cancelled' || a.approvalStatus === 'rejected' || a.approvalStatus === 'pending') return;
+      seenIds.add(a.id);
+      const auth = getAuthoritativeAuctionStatus(a);
+      auctionItems.push({
+        id: a.id,
+        name: a.name,
+        category: a.category,
+        seller: a.seller || a.maker,
+        description: a.description || '',
+        image: a.image,
+        price: a.currentBid || a.startingBid,
+        type: 'auction',
+        badge: auth.isLive ? 'Live Auction' : auth.isUpcoming ? 'Upcoming Lot' : 'Concluded',
+        badgeBg: auth.isLive ? 'rgba(120, 59, 75, 0.12)' : 'rgba(212, 163, 115, 0.25)',
+        badgeColor: auth.isLive ? 'var(--accent-burgundy)' : '#3B2314',
+        url: `/live/${a.id}`
+      });
+    });
+
+    const pool = [...shopItems, ...auctionItems];
+    const scored = [];
+
+    pool.forEach((item) => {
+      const name = (item.name || '').toLowerCase();
+      const cat = (item.category || '').toLowerCase();
+      const seller = (item.seller || '').toLowerCase();
+      const desc = (item.description || '').toLowerCase();
+
+      let score = 0;
+      if (name === query) score += 1000;
+      else if (name.startsWith(query)) score += 500;
+      else if (name.split(/\s+/).some((w) => w.startsWith(query))) score += 300;
+      else if (name.includes(query)) score += 200;
+
+      if (cat === query) score += 150;
+      else if (cat.startsWith(query)) score += 120;
+      else if (cat.includes(query)) score += 80;
+
+      if (seller.includes(query)) score += 50;
+      if (desc.includes(query)) score += 10;
+
+      if (score > 0) {
+        scored.push({ item, score });
+      }
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 8).map((s) => s.item);
+  }, [searchQuery, products, liveAuctions, upcomingAuctions, customAuctions]);
+
+  // Click outside search container to close autocomplete
+  useEffect(() => {
+    const handleClickOutsideSearch = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+        setSelectedIndex(-1);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideSearch);
+    return () => document.removeEventListener('mousedown', handleClickOutsideSearch);
+  }, []);
+
+  const handleSearchInputChange = (e) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    setSelectedIndex(-1);
+    setIsDropdownOpen(val.trim().length > 0);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (!isDropdownOpen || suggestions.length === 0) {
+      if (e.key === 'Enter') {
+        handleSearchSubmit(e);
+      }
+      return;
     }
-    navigate('/');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsDropdownOpen(false);
+      setSelectedIndex(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+        const target = suggestions[selectedIndex];
+        setIsDropdownOpen(false);
+        setSelectedIndex(-1);
+        navigate(target.url);
+      } else {
+        handleSearchSubmit(e);
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    setProfileDropdownOpen(false);
+    setMobileMenuOpen(false);
+    try {
+      const res = await signOut();
+      if (res && res.error) {
+        addToast(res.error, 'error');
+      } else {
+        navigate('/signin');
+      }
+    } catch (err) {
+      console.error('Sign out error:', err);
+      addToast(err.message || 'Failed to sign out. Please try again.', 'error');
+    }
   };
   const location = useLocation();
   const dropdownRef = useRef(null);
@@ -53,6 +198,8 @@ export const Navbar = () => {
   useEffect(() => {
     setMobileMenuOpen(false);
     setProfileDropdownOpen(false);
+    setIsDropdownOpen(false);
+    setSelectedIndex(-1);
   }, [location.pathname]);
 
   // Click outside to close profile dropdown
@@ -72,6 +219,7 @@ export const Navbar = () => {
       if (e.key === 'Escape') {
         setMobileMenuOpen(false);
         setProfileDropdownOpen(false);
+        setIsDropdownOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -79,7 +227,9 @@ export const Navbar = () => {
   }, []);
 
   const handleSearchSubmit = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    setIsDropdownOpen(false);
+    setSelectedIndex(-1);
     const query = searchQuery.trim();
     if (query) {
       navigate(`/shop?search=${encodeURIComponent(query)}`);
@@ -154,12 +304,14 @@ export const Navbar = () => {
             </Link>
           </div>
 
-          {/* Center: Search Bar (Text input + button, no categories dropdown) */}
+          {/* Center: Search Bar with Autocomplete Dropdown */}
           <div
+            ref={searchContainerRef}
             className="header-search-container"
             style={{
               flex: '1 1 480px',
               maxWidth: '640px',
+              position: 'relative',
               display: 'block'
             }}
           >
@@ -180,7 +332,11 @@ export const Navbar = () => {
                 type="text"
                 placeholder="Search distinctive objects, ceramics, living art, live lots..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={handleSearchInputChange}
+                onKeyDown={handleSearchKeyDown}
+                onFocus={() => {
+                  if (searchQuery.trim().length > 0) setIsDropdownOpen(true);
+                }}
                 style={{
                   flex: 1,
                   height: '42px',
@@ -216,6 +372,147 @@ export const Navbar = () => {
                 <span className="hide-on-mobile">Search</span>
               </button>
             </form>
+
+            {/* Real-time Autocomplete Dropdown */}
+            {isDropdownOpen && searchQuery.trim().length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  right: 0,
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-xs)',
+                  boxShadow: '0 10px 30px rgba(0, 0, 0, 0.12)',
+                  zIndex: 1000,
+                  overflow: 'hidden'
+                }}
+              >
+                {suggestions.length > 0 ? (
+                  <>
+                    <div
+                      style={{
+                        padding: '8px 14px',
+                        backgroundColor: 'var(--bg-primary)',
+                        borderBottom: '1px solid var(--border-color)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        color: 'var(--text-secondary)'
+                      }}
+                    >
+                      Top Matches ({suggestions.length})
+                    </div>
+
+                    <div style={{ maxHeight: '340px', overflowY: 'auto' }}>
+                      {suggestions.map((item, idx) => {
+                        const isSelected = selectedIndex === idx;
+                        return (
+                          <div
+                            key={`${item.type}-${item.id}`}
+                            onClick={() => {
+                              setIsDropdownOpen(false);
+                              setSelectedIndex(-1);
+                              navigate(item.url);
+                            }}
+                            onMouseEnter={() => setSelectedIndex(idx)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '12px',
+                              padding: '10px 14px',
+                              cursor: 'pointer',
+                              backgroundColor: isSelected ? 'rgba(120, 59, 75, 0.08)' : 'transparent',
+                              borderBottom: '1px solid var(--border-color)',
+                              transition: 'background-color 120ms ease'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                              <img
+                                src={item.image}
+                                alt={item.name}
+                                style={{
+                                  width: '40px',
+                                  height: '40px',
+                                  objectFit: 'cover',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: 'var(--surface-secondary)',
+                                  flexShrink: 0
+                                }}
+                              />
+                              <div style={{ minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-primary)',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                >
+                                  {item.name}
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {item.category} • {item.seller}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  padding: '2px 6px',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: item.badgeBg,
+                                  color: item.badgeColor
+                                }}
+                              >
+                                {item.badge}
+                              </span>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {formatINR(item.price)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div
+                      onClick={handleSearchSubmit}
+                      style={{
+                        padding: '10px 14px',
+                        backgroundColor: 'var(--bg-primary)',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--accent-burgundy)',
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        borderTop: '1px solid var(--border-color)'
+                      }}
+                      className="hover-burgundy"
+                    >
+                      View all results for "{searchQuery}" →
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ padding: '24px 16px', textAlign: 'center' }}>
+                    <p style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: 500, margin: '0 0 6px 0' }}>
+                      No objects matching "{searchQuery}"
+                    </p>
+                    <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: 0 }}>
+                      Press Enter to search the full marketplace collection.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right: Controls (Schedule, Watchlist, Bag, Profile) */}
@@ -496,7 +793,7 @@ export const Navbar = () => {
                     <div style={{ padding: '6px 0' }}>
                       <Link
                         to="/"
-                        onClick={() => setIsProfileOpen(false)}
+                        onClick={() => setProfileDropdownOpen(false)}
                         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 16px', fontSize: '13px', color: 'var(--text-primary)' }}
                         className="dropdown-item"
                       >

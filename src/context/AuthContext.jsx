@@ -484,17 +484,28 @@ export const AuthProvider = ({ children }) => {
 
   // Sign out
   const signOut = async () => {
+    let signOutError = null;
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          console.warn('Supabase signOut error:', error);
+          signOutError = error;
+        }
       } catch (e) {
-        console.warn('Supabase signOut error:', e);
+        console.warn('Supabase signOut exception:', e);
+        signOutError = e;
       }
     }
     setUser(null);
     setSession(null);
     localStorage.removeItem(DEMO_USER_STORAGE_KEY);
+    if (signOutError) {
+      addToast(signOutError.message || 'Failed to sign out completely from authentication server.', 'error');
+      return { success: false, error: signOutError.message || 'Failed to sign out.' };
+    }
     addToast('Signed out successfully.');
+    return { success: true };
   };
 
   // Request password reset email

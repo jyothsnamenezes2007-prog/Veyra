@@ -121,6 +121,7 @@ export const ProductsProvider = ({ children }) => {
       const handleProductDeleted = (payload) => {
         if (payload?.productId && isMounted) {
           setCustomProducts((prev) => prev.filter((p) => p.id !== payload.productId));
+          setSupabaseProducts((prev) => prev.filter((p) => p.id !== payload.productId && p.legacy_id !== payload.productId && p.supabaseId !== payload.productId));
         }
       };
 
@@ -281,18 +282,25 @@ export const ProductsProvider = ({ children }) => {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 403) {
-        addToast(data.error || 'Unauthorized: cannot delete this product.');
-        return { success: false, error: data.error };
+        addToast(data.error || 'Unauthorized: You can only delete your own products.', 'error');
+        return { success: false, error: data.error || 'Unauthorized' };
       }
       if (!res.ok) {
-        addToast(data.error || 'Failed to delete product.');
-        return { success: false, error: data.error };
+        addToast(data.error || 'Failed to delete product.', 'error');
+        return { success: false, error: data.error || 'Delete failed' };
       }
     } catch (e) {
       // Local fallback if offline
     }
 
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('products').delete().or(`id.eq.${productId},legacy_id.eq.${productId}`);
+      } catch (e) {}
+    }
+
     setCustomProducts((prev) => prev.filter((p) => p.id !== productId));
+    setSupabaseProducts((prev) => prev.filter((p) => p.id !== productId && p.legacy_id !== productId && p.supabaseId !== productId));
     addToast('Product successfully deleted from your listings.');
     return { success: true };
   }, [addToast]);

@@ -6,7 +6,8 @@ import {
   DEMO_AUCTION_IDS,
   getDemoBaselineAuction,
   getAuthoritativeAuctionWinner,
-  getMeetingAccess
+  getMeetingAccess,
+  getAuthoritativeAuctionStatus
 } from '../data/auctions';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -504,27 +505,13 @@ export const AuctionProvider = ({ children }) => {
       setLiveAuctions((prevAuctions) => {
         let hasChanges = false;
         const updated = prevAuctions.map((auc) => {
-          const start = auc.startTimestamp || (auc.endTimestamp - (auc.endsInSeconds || 7200) * 1000);
-          const end = auc.endTimestamp || auc.endTime || (start + 3600000);
-
-          let targetStatus;
-          let remaining;
+          const auth = getAuthoritativeAuctionStatus(auc, now);
+          const targetStatus = auth.status;
+          const remaining = auth.remainingSeconds;
           let winner = auc.winner;
 
-          if (now < start) {
-            targetStatus = 'upcoming';
-            remaining = Math.max(0, Math.floor((start - now) / 1000));
-            winner = null;
-          } else if (now >= start && now < end) {
-            targetStatus = 'active';
-            remaining = Math.max(0, Math.floor((end - now) / 1000));
-            winner = null;
-          } else {
-            targetStatus = 'ended';
-            remaining = 0;
-            if (!winner && auc.bidHistory && auc.bidHistory.length > 0) {
-              winner = getAuthoritativeAuctionWinner(auc);
-            }
+          if (auth.isEnded && !winner && auc.bidHistory && auc.bidHistory.length > 0) {
+            winner = getAuthoritativeAuctionWinner(auc);
           }
 
           if (auc.remainingSeconds !== remaining || auc.status !== targetStatus || auc.winner !== winner) {
@@ -549,27 +536,13 @@ export const AuctionProvider = ({ children }) => {
         const updated = prevCustom.map((auc) => {
           if (auc.approvalStatus !== 'approved') return auc;
 
-          const start = auc.scheduledTimestamp || auc.startTimestamp || 0;
-          const end = auc.endTimestamp || auc.endTime || (start + 86400000);
-
-          let targetStatus;
-          let remaining;
+          const auth = getAuthoritativeAuctionStatus(auc, now);
+          const targetStatus = auth.status;
+          const remaining = auth.remainingSeconds;
           let winner = auc.winner;
 
-          if (now < start) {
-            targetStatus = 'scheduled';
-            remaining = Math.max(0, Math.floor((start - now) / 1000));
-            winner = null;
-          } else if (now >= start && now < end) {
-            targetStatus = 'active';
-            remaining = Math.max(0, Math.floor((end - now) / 1000));
-            winner = null;
-          } else {
-            targetStatus = 'ended';
-            remaining = 0;
-            if (!winner && auc.bidHistory && auc.bidHistory.length > 0) {
-              winner = getAuthoritativeAuctionWinner(auc);
-            }
+          if (auth.isEnded && !winner && auc.bidHistory && auc.bidHistory.length > 0) {
+            winner = getAuthoritativeAuctionWinner(auc);
           }
 
           if (auc.status !== targetStatus || auc.remainingSeconds !== remaining || auc.winner !== winner) {
@@ -596,14 +569,17 @@ export const AuctionProvider = ({ children }) => {
   const activeApprovedCustomAuctions = useMemo(() => {
     const now = Date.now();
     return customAuctions
-      .filter((a) => a.approvalStatus === 'approved' && now >= a.scheduledTimestamp)
+      .filter((a) => {
+        if (a.approvalStatus !== 'approved') return false;
+        const auth = getAuthoritativeAuctionStatus(a, now);
+        return auth.isLive || auth.isEnded;
+      })
       .map((a) => {
-        const remaining = Math.max(0, Math.floor((a.endTimestamp - now) / 1000));
-        const isEnded = remaining <= 0;
+        const auth = getAuthoritativeAuctionStatus(a, now);
         return {
           ...a,
-          remainingSeconds: remaining,
-          status: isEnded ? 'ended' : 'active'
+          remainingSeconds: auth.remainingSeconds,
+          status: auth.status
         };
       });
   }, [customAuctions]);

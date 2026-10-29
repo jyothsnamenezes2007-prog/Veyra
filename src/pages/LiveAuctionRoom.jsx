@@ -25,7 +25,12 @@ import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../context/ToastContext';
 import { joinAuctionRoom, leaveAuctionRoom } from '../lib/socket';
 import { formatINR } from '../data/products';
-import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
+import {
+  getMeetingAccess,
+  getAuthoritativeAuctionWinner,
+  getAuthoritativeAuctionStatus,
+  formatAuctionCountdown
+} from '../data/auctions';
 import { ProductGallery } from '../components/ProductGallery';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
@@ -153,20 +158,12 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
     );
   }
 
-  const isLive = auction.status === 'active' && (auction.remainingSeconds ?? 0) > 0;
-  const isUpcoming = auction.status === 'upcoming';
-  const isEnded = auction.status === 'ended' || (!isLive && !isUpcoming);
+  const authState = getAuthoritativeAuctionStatus(auction);
+  const isLive = authState.isLive;
+  const isUpcoming = authState.isUpcoming;
+  const isEnded = authState.isEnded;
+  const remainingSeconds = authState.remainingSeconds;
   const isFavorited = isInWishlist(auction.productId || auction.id);
-
-  // Countdown formatter
-  const formatCountdown = (totalSeconds) => {
-    if (totalSeconds <= 0) return 'Concluded';
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
-  };
 
   // Chat comments for this specific lot
   // Auto-open WebRTC room if on /meet/:id route or ?meet=true
@@ -744,7 +741,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                     }}
                   >
                     <Clock size={16} />
-                    <span>{formatCountdown(auction.remainingSeconds)}</span>
+                    <span>{formatAuctionCountdown(remainingSeconds)}</span>
                   </div>
                 </div>
               </div>
@@ -914,7 +911,7 @@ export const LiveAuctionRoom = ({ autoOpenMeet = false }) => {
                   <Clock size={32} color="var(--accent-burgundy)" style={{ margin: '0 auto 10px' }} />
                   <h3 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>Auction Scheduled — Opens Soon</h3>
                   <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                    This lot opens in <strong>{formatCountdown(auction.remainingSeconds)}</strong>. Starting bid is set at <strong>{formatINR(auction.startingBid)}</strong>.
+                    This lot opens in <strong>{formatAuctionCountdown(remainingSeconds)}</strong>. Starting bid is set at <strong>{formatINR(auction.startingBid)}</strong>.
                   </p>
                   <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: 0 }}>
                     <ShieldCheck size={13} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: '4px' }} />

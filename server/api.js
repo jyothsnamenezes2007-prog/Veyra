@@ -20,6 +20,7 @@ import { scheduler } from './scheduler.js';
 import { evaluateAndExecuteProxyBids } from './proxyBidding.js';
 import { verifyGeminiModel } from './gemini.js';
 import { broadcastEvent, getActiveSocketCount } from './socket.js';
+import { getAuthoritativeAuctionStatus, getAuthoritativeAuctionWinner } from '../src/data/auctions.js';
 
 // Connected SSE clients (maintained for seamless backward-compatibility)
 const sseClients = new Set();
@@ -145,12 +146,30 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
+  // Helper to reconcile auction state with authoritative status and current time
+  const reconcileAuctionForResponse = (auc, now = Date.now()) => {
+    if (!auc) return auc;
+    const auth = getAuthoritativeAuctionStatus(auc, now);
+    let winner = auc.winner;
+    if (auth.isEnded && !winner && auc.bidHistory && auc.bidHistory.length > 0) {
+      winner = getAuthoritativeAuctionWinner(auc);
+    }
+    return {
+      ...auc,
+      status: auth.status,
+      remainingSeconds: auth.remainingSeconds,
+      winner: winner || auc.winner || null
+    };
+  };
+
   // 3. GET /api/auctions
   if (pathname === '/api/auctions' && method === 'GET') {
-    const auctions = getAuctions();
+    const now = Date.now();
+    const rawAuctions = getAuctions();
+    const auctions = rawAuctions.map((a) => reconcileAuctionForResponse(a, now));
     sendJson(res, 200, {
       success: true,
-      serverTime: Date.now(),
+      serverTime: now,
       auctions
     });
     return true;
@@ -165,10 +184,11 @@ export async function handleApiRequest(req, res) {
       sendJson(res, 404, { success: false, error: 'Auction lot not found.' });
       return true;
     }
+    const now = Date.now();
     sendJson(res, 200, {
       success: true,
-      serverTime: Date.now(),
-      auction
+      serverTime: now,
+      auction: reconcileAuctionForResponse(auction, now)
     });
     return true;
   }

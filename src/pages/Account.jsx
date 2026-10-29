@@ -31,14 +31,14 @@ import { useWishlist } from '../context/WishlistContext';
 import { useAuctions } from '../context/AuctionContext';
 import { useProducts } from '../context/ProductsContext';
 import { formatINR } from '../data/products';
-import { getMeetingAccess, getAuthoritativeAuctionWinner } from '../data/auctions';
+import { getMeetingAccess, getAuthoritativeAuctionWinner, getAuthoritativeAuctionStatus } from '../data/auctions';
 import { AuctionCallModal } from '../components/AuctionCallModal';
 
 export const Account = () => {
   const { user, signOut, updateProfile } = useAuth();
   const { orders, recentlyViewed } = useCart();
   const { items: wishlistItems, removeFromWishlist } = useWishlist();
-  const { liveAuctions, upcomingAuctions, userBids, registrations, reminders } = useAuctions();
+  const { liveAuctions, upcomingAuctions, customAuctions, userBids, registrations, reminders } = useAuctions();
   const { customProducts } = useProducts();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,6 +68,29 @@ export const Account = () => {
       setActiveTab(tab);
     }
   }, [searchParams]);
+
+  // Deduplicate repeated auction bids by exact auction ID, keeping the user's highest/latest bid
+  const deduplicatedUserBids = useMemo(() => {
+    if (!Array.isArray(userBids) || userBids.length === 0) return [];
+    const map = new Map();
+    userBids.forEach((b) => {
+      if (!b || !b.auctionId) return;
+      const key = String(b.auctionId);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, b);
+      } else {
+        const currentAmount = Number(b.amount || 0);
+        const existingAmount = Number(existing.amount || 0);
+        const currentTs = Number(b.timestamp || 0);
+        const existingTs = Number(existing.timestamp || 0);
+        if (currentAmount > existingAmount || (currentAmount === existingAmount && currentTs > existingTs)) {
+          map.set(key, b);
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+  }, [userBids]);
 
   useEffect(() => {
     if (user) {
@@ -1176,16 +1199,47 @@ export const Account = () => {
                   </div>
                 )}
 
-                {userBids.length > 0 ? (
+                {deduplicatedUserBids.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {userBids.map((b) => {
-                      const matchedAuction = liveAuctions.find((a) => a.id === b.auctionId || a.productId === b.auctionId);
-                      const access = matchedAuction ? getMeetingAccess(matchedAuction, user) : { canAccessMeeting: false };
-                      const isWonAndClosed = access.isWinningBuyer && access.canAccessMeeting;
+                    {deduplicatedUserBids.map((b) => {
+                      const matchedAuction =
+                        liveAuctions.find((a) => a.id === b.auctionId) ||
+                        (customAuctions && customAuctions.find((a) => a.id === b.auctionId)) ||
+                        upcomingAuctions.find((a) => a.id === b.auctionId) ||
+                        null;
+
+                      const authState = matchedAuction
+                        ? getAuthoritativeAuctionStatus(matchedAuction)
+                        : {
+                            isLive: b.status === 'Ongoing' || b.status === 'active',
+                            isEnded: b.status === 'Ended' || b.status === 'Concluded',
+                            isUpcoming: b.status === 'Scheduled' || b.status === 'upcoming',
+                            label: b.status || 'Ongoing'
+                          };
+
+                      const isLive = authState.isLive;
+                      const isEnded = authState.isEnded;
+                      const isUpcoming = authState.isUpcoming;
+
+                      const access = matchedAuction ? getMeetingAccess(matchedAuction, user) : { canAccessMeeting: false, isWinningBuyer: false };
+                      const isWon = Boolean(access.isWinningBuyer);
+
+                      // Check if user is leading
+                      const topBid = matchedAuction?.bidHistory && matchedAuction.bidHistory.length > 0 ? matchedAuction.bidHistory[0] : null;
+                      const isLeading = isLive && Boolean(
+                        (topBid && (
+                          (user?.id && topBid.bidderId === user.id) ||
+                          (user?.name && topBid.bidder && topBid.bidder.toLowerCase().trim() === user.name.toLowerCase().trim()) ||
+                          topBid.amount === b.amount
+                        )) ||
+                        (matchedAuction && b.amount >= matchedAuction.currentBid && matchedAuction.currentBid > 0)
+                      );
+
+                      const isWonAndClosed = isEnded && isWon && access.canAccessMeeting;
 
                       return (
                         <div
-                          key={b.id}
+                          key={b.auctionId || b.id}
                           style={{
                             border: isWonAndClosed ? '1.5px solid var(--accent-burgundy)' : '1px solid var(--border-color)',
                             backgroundColor: isWonAndClosed ? '#FFFDFB' : '#FFFFFF',
@@ -1209,7 +1263,7 @@ export const Account = () => {
                                 {b.auctionTitle}
                               </Link>
                               <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block' }}>
-                                Bid placed {b.time}
+                                Bid placed {b.time} • Lot #{String(b.auctionId).toUpperCase()}
                               </span>
                             </div>
                           </div>
@@ -1224,28 +1278,100 @@ export const Account = () => {
                               </strong>
                             </div>
 
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                padding: '3px 8px',
-                                borderRadius: 'var(--radius-xs)',
-                                backgroundColor: isWonAndClosed
-                                  ? 'rgba(40, 167, 69, 0.12)'
-                                  : (b.status === 'Leading' || b.status === 'Ongoing')
-                                  ? 'var(--badge-shipping-bg)'
-                                  : 'rgba(158, 58, 58, 0.1)',
-                                color: isWonAndClosed
-                                  ? '#1e7e34'
-                                  : (b.status === 'Leading' || b.status === 'Ongoing')
-                                  ? 'var(--badge-shipping-text)'
-                                  : 'var(--error-color)'
-                              }}
-                            >
-                              {isWonAndClosed ? 'Auction Won' : (b.status === 'Leading' ? 'Ongoing' : (b.status === 'Ended' ? 'Concluded' : b.status))}
-                            </span>
+                            {/* Auction Lifecycle Badge */}
+                            {isLive ? (
+                              <span className="badge-live" style={{ fontSize: '11px', padding: '3px 8px' }}>
+                                <span className="dot" />
+                                ONGOING
+                              </span>
+                            ) : isUpcoming ? (
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: 'rgba(212, 163, 115, 0.25)',
+                                  color: '#3B2314'
+                                }}
+                              >
+                                SCHEDULED
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: 'rgba(25, 25, 25, 0.08)',
+                                  color: 'var(--text-primary)'
+                                }}
+                              >
+                                CONCLUDED
+                              </span>
+                            )}
 
-                            {isWonAndClosed ? (
+                            {/* User Bidding Position / Result Badge (Separate from Lifecycle) */}
+                            {isLive ? (
+                              isLeading ? (
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: 'var(--radius-xs)',
+                                    backgroundColor: 'rgba(40, 167, 69, 0.12)',
+                                    color: '#1e7e34'
+                                  }}
+                                >
+                                  Leading
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: 'var(--radius-xs)',
+                                    backgroundColor: 'rgba(158, 58, 58, 0.1)',
+                                    color: 'var(--error-color)'
+                                  }}
+                                >
+                                  Outbid
+                                </span>
+                              )
+                            ) : isEnded ? (
+                              isWon ? (
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: 'var(--radius-xs)',
+                                    backgroundColor: 'rgba(40, 167, 69, 0.12)',
+                                    color: '#1e7e34'
+                                  }}
+                                >
+                                  Auction Won
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    padding: '3px 8px',
+                                    borderRadius: 'var(--radius-xs)',
+                                    backgroundColor: 'rgba(158, 58, 58, 0.08)',
+                                    color: 'var(--text-secondary)'
+                                  }}
+                                >
+                                  Outbid / Lost
+                                </span>
+                              )
+                            ) : null}
+
+                            {isWonAndClosed && (
                               <button
                                 onClick={() => setActiveMeetingAuction(matchedAuction)}
                                 className="btn btn-burgundy btn-sm"
@@ -1254,11 +1380,11 @@ export const Account = () => {
                                 <Video size={13} />
                                 <span>Enter Meeting</span>
                               </button>
-                            ) : (
-                              <Link to={`/live/${b.auctionId}`} className="btn btn-secondary btn-sm" style={{ height: '34px' }}>
-                                Floor Room
-                              </Link>
                             )}
+
+                            <Link to={`/live/${b.auctionId}`} className="btn btn-secondary btn-sm" style={{ height: '34px' }}>
+                              Floor Room
+                            </Link>
                           </div>
                         </div>
                       );

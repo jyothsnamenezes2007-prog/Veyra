@@ -643,7 +643,7 @@ export const MyProducts = () => {
                   <Trash2 size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Delete Sold Product?</h3>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-primary)' }}>Delete Shop Product?</h3>
                   <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)' }}>
                     Listing ID: {productToDelete.id}
                   </p>
@@ -651,10 +651,10 @@ export const MyProducts = () => {
               </div>
 
               <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
-                Are you sure you want to delete <strong>{productToDelete.name}</strong> from your active product listings?
+                Are you sure you want to delete <strong>{productToDelete.name}</strong> from your shop listings? This will remove the object from your seller dashboard and the public Shop marketplace catalog.
                 <br /><br />
                 <span style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                  Data Safety Guarantee: All historical auction records, bids, order invoices, and payment audits will remain securely preserved.
+                  Data Safety Guarantee: All historical order invoices and payment records remain securely preserved.
                 </span>
               </p>
 
@@ -670,8 +670,10 @@ export const MyProducts = () => {
                 <button
                   type="button"
                   onClick={async () => {
-                    await deleteProduct(productToDelete.id, user);
-                    setProductToDelete(null);
+                    const res = await deleteProduct(productToDelete.id, user);
+                    if (res && res.success !== false) {
+                      setProductToDelete(null);
+                    }
                   }}
                   className="btn btn-burgundy"
                   style={{
@@ -919,7 +921,7 @@ const ProductRow = ({
               <span>Meet Winner</span>
             </button>
           )}
-          {product.derivedStatus === 'sold' && (
+          {!isAuction && (
             <button
               type="button"
               onClick={() => onDeleteProduct && onDeleteProduct(product)}
@@ -936,7 +938,7 @@ const ProductRow = ({
                 fontWeight: 600,
                 cursor: 'pointer'
               }}
-              title="Delete sold product"
+              title="Delete shop product"
             >
               <Trash2 size={12} />
               <span>Delete</span>

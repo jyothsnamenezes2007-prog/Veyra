@@ -232,6 +232,126 @@ export const getDemoBaselineAuction = (auctionId) => {
 /**
  * Authoritative Winner Calculation:
  * - Must be an ended auction
+/**
+ * Authoritatively calculates the auction status, remaining seconds, and countdown state.
+ * Prevents premature conclusion and handles timezone/date synchronization.
+ */
+export const getAuthoritativeAuctionStatus = (auction, now = Date.now()) => {
+  if (!auction) {
+    return {
+      status: 'ended',
+      isLive: false,
+      isUpcoming: false,
+      isEnded: true,
+      remainingSeconds: 0,
+      label: 'Concluded'
+    };
+  }
+
+  if (auction.status === 'cancelled' || auction.isCancelled) {
+    return {
+      status: 'cancelled',
+      isLive: false,
+      isUpcoming: false,
+      isEnded: true,
+      remainingSeconds: 0,
+      label: 'Cancelled'
+    };
+  }
+
+  const end = Number(auction.endTimestamp || auction.endTime || 0);
+  const start = Number(auction.startTimestamp || auction.scheduledTimestamp || 0);
+
+  // If status is explicitly ended or concluded
+  if (auction.status === 'ended' || auction.status === 'concluded') {
+    return {
+      status: 'ended',
+      isLive: false,
+      isUpcoming: false,
+      isEnded: true,
+      remainingSeconds: 0,
+      label: 'Concluded'
+    };
+  }
+
+  // If end timestamp is set and now has reached or passed end
+  if (end > 0 && now >= end) {
+    return {
+      status: 'ended',
+      isLive: false,
+      isUpcoming: false,
+      isEnded: true,
+      remainingSeconds: 0,
+      label: 'Concluded'
+    };
+  }
+
+  // If scheduled/upcoming
+  const isPendingStart = (start > 0 && now < start) || auction.status === 'scheduled' || auction.status === 'upcoming';
+  if (isPendingStart && (end === 0 || now < end)) {
+    const remainingToStart = start > 0 ? Math.max(0, Math.floor((start - now) / 1000)) : (auction.remainingSeconds ?? 0);
+    return {
+      status: 'upcoming',
+      isLive: false,
+      isUpcoming: true,
+      isEnded: false,
+      remainingSeconds: remainingToStart,
+      label: 'Scheduled'
+    };
+  }
+
+  // Ongoing auction
+  let remainingToEnd = 0;
+  if (end > 0) {
+    remainingToEnd = Math.max(0, Math.floor((end - now) / 1000));
+  } else if (typeof auction.remainingSeconds === 'number' && !isNaN(auction.remainingSeconds)) {
+    remainingToEnd = Math.max(0, auction.remainingSeconds);
+  } else if (typeof auction.endsInSeconds === 'number' && !isNaN(auction.endsInSeconds)) {
+    remainingToEnd = Math.max(0, auction.endsInSeconds);
+  }
+
+  if (remainingToEnd <= 0 && end > 0) {
+    return {
+      status: 'ended',
+      isLive: false,
+      isUpcoming: false,
+      isEnded: true,
+      remainingSeconds: 0,
+      label: 'Concluded'
+    };
+  }
+
+  return {
+    status: 'active',
+    isLive: true,
+    isUpcoming: false,
+    isEnded: false,
+    remainingSeconds: remainingToEnd,
+    label: 'Ongoing'
+  };
+};
+
+/**
+ * Unified countdown formatter
+ */
+export const formatAuctionCountdown = (totalSeconds) => {
+  if (typeof totalSeconds !== 'number' || isNaN(totalSeconds) || totalSeconds <= 0) {
+    return 'Concluded';
+  }
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+
+  if (days > 0) {
+    return `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+  }
+  return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+};
+
+/**
+ * Authoritative Auction Winner resolution helper:
  * - Cancelled auctions have NO winner
  * - Validates bids in bidHistory
  * - Seller CANNOT be the winner
@@ -246,10 +366,8 @@ export const getAuthoritativeAuctionWinner = (auction) => {
   }
 
   // 2. Auction must be ended (by status or elapsed time)
-  const now = Date.now();
-  const end = auction.endTimestamp || auction.endTime || 0;
-  const isEnded = auction.status === 'ended' || (end > 0 && now >= end);
-  if (!isEnded) {
+  const authState = getAuthoritativeAuctionStatus(auction);
+  if (!authState.isEnded) {
     return null;
   }
 
@@ -308,11 +426,8 @@ export const getMeetingAccess = (auction, currentUser) => {
     return { canAccessMeeting: false, buttonLabel: null, reason: 'Auction was cancelled.' };
   }
 
-  const now = Date.now();
-  const end = auction.endTimestamp || auction.endTime || 0;
-  const isEnded = auction.status === 'ended' || (end > 0 && now >= end);
-
-  if (!isEnded) {
+  const authState = getAuthoritativeAuctionStatus(auction);
+  if (!authState.isEnded) {
     return { canAccessMeeting: false, buttonLabel: null, reason: 'Auction is currently active.' };
   }
 

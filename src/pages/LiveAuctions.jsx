@@ -13,6 +13,7 @@ import {
 import { useAuctions } from '../context/AuctionContext';
 import { useWishlist } from '../context/WishlistContext';
 import { formatINR } from '../data/products';
+import { getAuthoritativeAuctionStatus, formatAuctionCountdown } from '../data/auctions';
 import { AdminAuctionControls } from '../components/AdminAuctionControls';
 
 export const LiveAuctions = () => {
@@ -41,9 +42,10 @@ export const LiveAuctions = () => {
 
   // Authoritative filter: ONLY auctions that are currently active (status active and remainingSeconds > 0)
   const activeLots = useMemo(() => {
-    let result = liveAuctions.filter(
-      (auc) => (auc.status === 'active' || (!auc.status && (auc.endsInSeconds || 0) > 0)) && (auc.remainingSeconds ?? 0) > 0
-    );
+    let result = liveAuctions.filter((auc) => {
+      const auth = getAuthoritativeAuctionStatus(auc);
+      return auth.isLive;
+    });
 
     // Category filter
     if (selectedCategory !== 'all') {
@@ -471,7 +473,7 @@ export const LiveAuctions = () => {
                             }}
                           >
                             <Clock size={13} />
-                            <span>{formatCountdown(auction.remainingSeconds)}</span>
+                            <span>{formatAuctionCountdown(getAuthoritativeAuctionStatus(auction).remainingSeconds)}</span>
                           </div>
                         </div>
                       </div>

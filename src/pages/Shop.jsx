@@ -9,15 +9,19 @@ import {
   Sparkles,
   Search,
   CheckCircle2,
-  Heart
+  Heart,
+  Gavel
 } from 'lucide-react';
 import { useProducts } from '../context/ProductsContext';
+import { useAuctions } from '../context/AuctionContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { formatINR } from '../data/products';
+import { getAuthoritativeAuctionStatus } from '../data/auctions';
 
 export const Shop = () => {
   const { products, categories } = useProducts();
+  const { liveAuctions, upcomingAuctions, customAuctions } = useAuctions();
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
@@ -71,65 +75,127 @@ export const Shop = () => {
     setSearchParams({});
   };
 
-  // Filtered & sorted products list (independent of live auctions)
+  // Combine shop products and approved auctions for unified search catalog
+  const allCatalogItems = useMemo(() => {
+    // 1. Eligible shop products (no deleted items)
+    const validShopProducts = (products || [])
+      .filter((p) => !p.isAuction && p.type !== 'auction' && p.status !== 'deleted' && (!p.listingStatus || p.listingStatus === 'active'))
+      .map((p) => ({
+        ...p,
+        isAuction: false,
+        listingType: 'shop',
+        badgeLabel: 'Shop',
+        displayPrice: p.price
+      }));
+
+    // 2. Eligible auctions (deduplicated by ID, no deleted or cancelled items)
+    const auctionMap = new Map();
+    [...(liveAuctions || []), ...(upcomingAuctions || []), ...(customAuctions || [])].forEach((auc) => {
+      if (!auc || !auc.id) return;
+      if (auc.status === 'deleted' || auc.status === 'cancelled' || auc.approvalStatus === 'rejected' || auc.approvalStatus === 'pending') return;
+      if (!auctionMap.has(auc.id)) {
+        const auth = getAuthoritativeAuctionStatus(auc);
+        auctionMap.set(auc.id, {
+          ...auc,
+          isAuction: true,
+          listingType: 'auction',
+          price: auc.currentBid || auc.startingBid || 0,
+          displayPrice: auc.currentBid || auc.startingBid || 0,
+          seller: auc.seller || auc.maker || 'Veyra Workshop',
+          description: auc.description || 'Rare distinctive collectible lot.',
+          badgeLabel: auth.isLive ? 'Live Auction' : auth.isUpcoming ? 'Upcoming Lot' : 'Concluded',
+          authStatus: auth
+        });
+      }
+    });
+
+    return [...validShopProducts, ...Array.from(auctionMap.values())];
+  }, [products, liveAuctions, upcomingAuctions, customAuctions]);
+
+  // Filtered & sorted products list (supports both shop and auctions when searching)
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => !p.isAuction && p.type !== 'auction' && (!p.listingStatus || p.listingStatus === 'active')); // Dedicated shop marketplace items
+    // If search term is present, search both shop items and auctions
+    // If no search term is present, browse shop products
+    let pool = searchTerm.trim()
+      ? allCatalogItems
+      : allCatalogItems.filter((item) => !item.isAuction);
 
     // Category filter
     if (activeCategory !== 'all') {
       const targetCatObj = categories.find((c) => c.id === activeCategory);
       const targetName = targetCatObj ? targetCatObj.name.toLowerCase() : activeCategory.toLowerCase();
-      result = result.filter(
+      pool = pool.filter(
         (p) =>
-          p.category.toLowerCase().includes(targetName) ||
-          p.category.toLowerCase().replace(/[^a-z]/g, '') === activeCategory.replace(/[^a-z]/g, '')
+          (p.category || '').toLowerCase().includes(targetName) ||
+          (p.category || '').toLowerCase().replace(/[^a-z]/g, '') === activeCategory.replace(/[^a-z]/g, '')
       );
     }
 
-    // Search filter
+    // Search filter with exact-match prioritization
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase().trim();
-      result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(term) ||
-          p.seller.toLowerCase().includes(term) ||
-          p.description.toLowerCase().includes(term) ||
-          p.category.toLowerCase().includes(term)
-      );
+      const scored = [];
+
+      pool.forEach((p) => {
+        const name = (p.name || '').toLowerCase();
+        const cat = (p.category || '').toLowerCase();
+        const seller = (p.seller || '').toLowerCase();
+        const desc = (p.description || '').toLowerCase();
+
+        let score = 0;
+        if (name === term) score += 1000;
+        else if (name.startsWith(term)) score += 500;
+        else if (name.split(/\s+/).some((w) => w.startsWith(term))) score += 300;
+        else if (name.includes(term)) score += 200;
+
+        if (cat === term) score += 150;
+        else if (cat.startsWith(term)) score += 120;
+        else if (cat.includes(term)) score += 80;
+
+        if (seller.includes(term)) score += 50;
+        if (desc.includes(term)) score += 10;
+
+        if (score > 0) {
+          scored.push({ item: p, score });
+        }
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      pool = scored.map((s) => s.item);
     }
 
     // Price range filter
     if (priceRange === 'under-15k') {
-      result = result.filter((p) => p.price < 15000);
+      pool = pool.filter((p) => p.displayPrice < 15000);
     } else if (priceRange === '15k-30k') {
-      result = result.filter((p) => p.price >= 15000 && p.price <= 30000);
+      pool = pool.filter((p) => p.displayPrice >= 15000 && p.displayPrice <= 30000);
     } else if (priceRange === 'above-30k') {
-      result = result.filter((p) => p.price > 30000);
+      pool = pool.filter((p) => p.displayPrice > 30000);
     }
 
     // Condition filter
     if (conditionFilter !== 'all') {
-      result = result.filter((p) =>
+      pool = pool.filter((p) =>
         (p.condition || '').toLowerCase().includes(conditionFilter.toLowerCase())
       );
     }
 
     // In-stock filter
     if (inStockOnly) {
-      result = result.filter((p) => p.inStock);
+      pool = pool.filter((p) => !p.isAuction && p.inStock);
     }
 
     // Sorting
     if (sortBy === 'price-low') {
-      result.sort((a, b) => a.price - b.price);
+      pool = [...pool].sort((a, b) => a.displayPrice - b.displayPrice);
     } else if (sortBy === 'price-high') {
-      result.sort((a, b) => b.price - a.price);
+      pool = [...pool].sort((a, b) => b.displayPrice - a.displayPrice);
     } else if (sortBy === 'rating') {
-      result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      pool = [...pool].sort((a, b) => (b.rating || 4.5) - (a.rating || 4.5));
     }
 
-    return result;
-  }, [products, categories, activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy]);
+    return pool;
+  }, [allCatalogItems, categories, activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy]);
 
   return (
     <div style={{ paddingTop: '36px', paddingBottom: '96px', backgroundColor: 'var(--bg-primary)' }}>
@@ -326,7 +392,7 @@ export const Shop = () => {
         {/* Results Count Banner */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-            Showing <strong>{filteredProducts.length}</strong> distinctive objects
+            Showing <strong>{filteredProducts.length}</strong> {searchTerm.trim() ? 'distinctive objects & lots' : 'distinctive objects'}
           </span>
         </div>
 
@@ -341,9 +407,11 @@ export const Shop = () => {
           >
             {filteredProducts.map((product) => {
               const isFav = isInWishlist(product.id);
+              const targetUrl = product.isAuction ? `/live/${product.id}` : `/product/${product.id}`;
+
               return (
                 <article
-                  key={product.id}
+                  key={product.isAuction ? `auc-${product.id}` : `prod-${product.id}`}
                   style={{
                     backgroundColor: '#FFFFFF',
                     border: '1px solid var(--border-color)',
@@ -364,7 +432,7 @@ export const Shop = () => {
                       overflow: 'hidden'
                     }}
                   >
-                    <Link to={`/product/${product.id}`} style={{ display: 'block', width: '100%', height: '100%' }}>
+                    <Link to={targetUrl} style={{ display: 'block', width: '100%', height: '100%' }}>
                       <img
                         src={product.image}
                         alt={product.name}
@@ -377,25 +445,40 @@ export const Shop = () => {
                       />
                     </Link>
 
-                    {/* Category Tag */}
-                    <span
-                      style={{
-                        position: 'absolute',
-                        top: '10px',
-                        left: '10px',
-                        padding: '3px 8px',
-                        backgroundColor: 'rgba(248, 247, 244, 0.94)',
-                        backdropFilter: 'blur(4px)',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em',
-                        color: 'var(--text-secondary)',
-                        borderRadius: 'var(--radius-xs)'
-                      }}
-                    >
-                      {product.category}
-                    </span>
+                    {/* Category & Auction Tag */}
+                    <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          padding: '3px 8px',
+                          backgroundColor: 'rgba(248, 247, 244, 0.94)',
+                          backdropFilter: 'blur(4px)',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          color: 'var(--text-secondary)',
+                          borderRadius: 'var(--radius-xs)'
+                        }}
+                      >
+                        {product.category}
+                      </span>
+                      {product.isAuction && (
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            backgroundColor: product.authStatus?.isLive ? 'rgba(120, 59, 75, 0.95)' : 'rgba(212, 163, 115, 0.95)',
+                            color: '#FFF',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.04em',
+                            borderRadius: 'var(--radius-xs)'
+                          }}
+                        >
+                          {product.badgeLabel}
+                        </span>
+                      )}
+                    </div>
 
                     {/* Heart Button */}
                     <button
@@ -432,7 +515,7 @@ export const Shop = () => {
                         {product.seller}
                       </span>
 
-                      <Link to={`/product/${product.id}`}>
+                      <Link to={targetUrl}>
                         <h3
                           style={{
                             fontFamily: 'var(--font-serif)',
@@ -466,18 +549,36 @@ export const Shop = () => {
 
                     {/* Price & Action */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
-                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {formatINR(product.price)}
-                      </span>
+                      <div>
+                        {product.isAuction && (
+                          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>
+                            {product.authStatus?.isLive ? 'Current Bid' : 'Starting Bid'}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--text-primary)' }}>
+                          {formatINR(product.displayPrice || product.price)}
+                        </span>
+                      </div>
 
-                      <button
-                        onClick={() => addToCart(product, 1)}
-                        className="btn btn-secondary btn-sm"
-                        style={{ gap: '6px' }}
-                      >
-                        <ShoppingBag size={13} />
-                        <span>Add to Bag</span>
-                      </button>
+                      {product.isAuction ? (
+                        <Link
+                          to={`/live/${product.id}`}
+                          className="btn btn-burgundy btn-sm"
+                          style={{ gap: '6px' }}
+                        >
+                          <Gavel size={13} />
+                          <span>{product.authStatus?.isLive ? 'Floor Room' : 'View Lot'}</span>
+                        </Link>
+                      ) : (
+                        <button
+                          onClick={() => addToCart(product, 1)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ gap: '6px' }}
+                        >
+                          <ShoppingBag size={13} />
+                          <span>Add to Bag</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>

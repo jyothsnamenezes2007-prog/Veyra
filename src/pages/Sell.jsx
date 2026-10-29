@@ -111,7 +111,6 @@ export const Sell = () => {
     'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1000&q=80'
   ]);
 
-  const [customImageUrl, setCustomImageUrl] = useState('');
   const [imageError, setImageError] = useState('');
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -213,20 +212,7 @@ export const Sell = () => {
     }
   };
 
-  // Add image by URL
-  const handleAddUrlImage = () => {
-    setImageError('');
-    const trimmed = customImageUrl.trim();
-    if (!trimmed) return;
 
-    if (images.length >= MAX_IMAGES) {
-      setImageError(`You can attach up to ${MAX_IMAGES} photos per object listing.`);
-      return;
-    }
-
-    setImages((prev) => [...prev, trimmed]);
-    setCustomImageUrl('');
-  };
 
   // Remove individual image
   const handleRemoveImage = (indexToRemove) => {
@@ -410,6 +396,29 @@ export const Sell = () => {
           sellingOption: 'auction'
         });
       }
+
+      // Reset form fields after successful submission without losing the success message
+      setFormData({
+        name: '',
+        seller: defaultSellerName,
+        location: '',
+        category: 'Handmade',
+        price: '',
+        startingBid: '',
+        minIncrement: 1000,
+        reservePrice: '',
+        startDate: defaultStartDate,
+        startTime: defaultStartTime,
+        endDate: defaultEndDate,
+        endTime: defaultEndTime,
+        description: '',
+        materials: '',
+        dimensions: '',
+        provenance: '',
+        authenticityCertificate: 'Certificate of Provenance & Studio Hallmark',
+        condition: 'Studio Mint Original'
+      });
+      setImages([]);
     } catch (err) {
       console.error('Submission error:', err);
       setFormError(err.message || 'An error occurred while saving your listing. Please try again.');
@@ -422,14 +431,26 @@ export const Sell = () => {
     setSubmittedData(null);
     setFormError('');
     setImageError('');
-    setFormData((prev) => ({
-      ...prev,
+    setFormData({
       name: '',
+      seller: defaultSellerName,
+      location: '',
+      category: 'Handmade',
       price: '',
       startingBid: '',
+      minIncrement: 1000,
       reservePrice: '',
-      description: ''
-    }));
+      startDate: defaultStartDate,
+      startTime: defaultStartTime,
+      endDate: defaultEndDate,
+      endTime: defaultEndTime,
+      description: '',
+      materials: '',
+      dimensions: '',
+      provenance: '',
+      authenticityCertificate: 'Certificate of Provenance & Studio Hallmark',
+      condition: 'Studio Mint Original'
+    });
     setImages([]);
   };
 
@@ -507,55 +528,7 @@ export const Sell = () => {
           </div>
         )}
 
-        {/* Success Confirmation Card */}
-        {submittedData && (
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              border: '1.5px solid var(--accent-burgundy)',
-              borderRadius: 'var(--radius-xs)',
-              padding: '28px 32px',
-              marginBottom: '36px',
-              boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
-            }}
-          >
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-              <CheckCircle2 size={28} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
-              <div style={{ flex: 1 }}>
-                <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
-                  {submittedData.sellingOption === 'auction'
-                    ? 'Live Auction Lot Submitted for Approval!'
-                    : 'Shop Product Submitted for Approval!'}
-                </h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 18px 0' }}>
-                  <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
-                  <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
-                    {submittedData.sellingOption}
-                  </code>{' '}
-                  and queued for curator review with status{' '}
-                  <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
-                  {submittedData.sellingOption === 'auction'
-                    ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
-                    : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
-                </p>
 
-                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
-                    <Store size={15} />
-                    <span>View in Seller Dashboard</span>
-                  </Link>
-                  <button
-                    onClick={handleResetForm}
-                    className="btn btn-secondary"
-                    style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
-                  >
-                    <span>Submit Another Item</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Selling Flow Selector: 2 Distinct Options */}
         <div style={{ marginBottom: '32px' }}>
@@ -1104,28 +1077,7 @@ export const Sell = () => {
                 </div>
               )}
 
-              {/* Add by URL */}
-              {images.length < MAX_IMAGES && (
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-                  <input
-                    type="url"
-                    className="form-input"
-                    value={customImageUrl}
-                    onChange={(e) => setCustomImageUrl(e.target.value)}
-                    placeholder="Or paste high-resolution image URL..."
-                    style={{ flex: 1, fontSize: '12px' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddUrlImage}
-                    className="btn btn-secondary btn-sm"
-                    disabled={!customImageUrl.trim()}
-                  >
-                    <Plus size={13} />
-                    <span>Add URL</span>
-                  </button>
-                </div>
-              )}
+
 
               {/* Curated Presets */}
               <div>
@@ -1294,7 +1246,7 @@ export const Sell = () => {
             )}
 
             {/* Submit Actions */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: submittedData ? '20px' : 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
                 <ShieldCheck size={14} color="var(--accent-burgundy)" />
                 <span>Submitted with status <strong>Pending Approval</strong></span>
@@ -1321,6 +1273,57 @@ export const Sell = () => {
                 )}
               </button>
             </div>
+
+            {/* Success Confirmation Card: Placed at the bottom of the Sell section, near the Sell/Submit button */}
+            {submittedData && (
+              <div
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  border: '1.5px solid var(--accent-burgundy)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '24px 28px',
+                  marginTop: '20px',
+                  boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
+                }}
+              >
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                  <CheckCircle2 size={26} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ fontSize: '1.3rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
+                      {submittedData.sellingOption === 'auction'
+                        ? 'Live Auction Lot Submitted for Approval!'
+                        : 'Shop Product Submitted for Approval!'}
+                    </h3>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                      <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
+                      <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                        {submittedData.sellingOption}
+                      </code>{' '}
+                      and queued for curator review with status{' '}
+                      <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
+                      {submittedData.sellingOption === 'auction'
+                        ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
+                        : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <Link to="/my-products" className="btn btn-burgundy" style={{ height: '38px', padding: '0 18px', fontSize: '12.5px' }}>
+                        <Store size={15} />
+                        <span>View in Seller Dashboard</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={handleResetForm}
+                        className="btn btn-secondary"
+                        style={{ height: '38px', padding: '0 18px', fontSize: '12.5px' }}
+                      >
+                        <span>Submit Another Item</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </form>
 
           {/* RIGHT COLUMN: Live Visual Preview Card */}
