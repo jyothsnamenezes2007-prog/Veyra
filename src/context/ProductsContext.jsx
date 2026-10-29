@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { PRODUCTS, CATEGORIES } from '../data/products';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getSocket } from '../lib/socket';
 
 const ProductsContext = createContext(null);
 const CUSTOM_PRODUCTS_KEY = 'veyra_custom_products';
@@ -82,7 +83,7 @@ export const ProductsProvider = ({ children }) => {
     };
   }, []);
 
-  // 2. Synchronize with local server database
+  // 2. Synchronize with local server database & subscribe to Socket.IO real-time events
   useEffect(() => {
     let isMounted = true;
     fetch('/api/products')
@@ -105,6 +106,54 @@ export const ProductsProvider = ({ children }) => {
         }
       })
       .catch(() => {});
+
+    const socket = getSocket();
+    if (socket) {
+      const handleProductCreated = (payload) => {
+        if (payload?.product && isMounted) {
+          setCustomProducts((prev) => {
+            if (prev.some((p) => p.id === payload.product.id)) return prev;
+            return [payload.product, ...prev];
+          });
+        }
+      };
+
+      const handleProductDeleted = (payload) => {
+        if (payload?.productId && isMounted) {
+          setCustomProducts((prev) => prev.filter((p) => p.id !== payload.productId));
+        }
+      };
+
+      const handleProductApproved = (payload) => {
+        if (payload?.product?.id && isMounted) {
+          setCustomProducts((prev) =>
+            prev.map((p) => (p.id === payload.product.id ? { ...p, listingStatus: 'active' } : p))
+          );
+        }
+      };
+
+      const handleProductRejected = (payload) => {
+        if (payload?.product?.id && isMounted) {
+          setCustomProducts((prev) =>
+            prev.map((p) => (p.id === payload.product.id ? { ...p, listingStatus: 'rejected' } : p))
+          );
+        }
+      };
+
+      socket.on('PRODUCT_CREATED', handleProductCreated);
+      socket.on('PRODUCT_DELETED', handleProductDeleted);
+      socket.on('PRODUCT_APPROVED', handleProductApproved);
+      socket.on('PRODUCT_REJECTED', handleProductRejected);
+
+      return () => {
+        isMounted = false;
+        socket.off('PRODUCT_CREATED', handleProductCreated);
+        socket.off('PRODUCT_DELETED', handleProductDeleted);
+        socket.off('PRODUCT_APPROVED', handleProductApproved);
+        socket.off('PRODUCT_REJECTED', handleProductRejected);
+      };
+    }
+
     return () => {
       isMounted = false;
     };
@@ -140,32 +189,22 @@ export const ProductsProvider = ({ children }) => {
           : [productData.image]
     };
 
-    // Try server persistence
+    // Authoritative server persistence (server coordinates Supabase sync & validation)
     try {
-      fetch('/api/products', {
+      const res = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newProduct)
-      }).catch(() => {});
-    } catch (e) {}
-
-    // Try Supabase persistence if configured
-    if (supabase) {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        await supabase.from('products').insert({
-          title: newProduct.name || newProduct.title,
-          description: newProduct.description,
-          price: Number(newProduct.price),
-          category: newProduct.category,
-          seller_id: user ? user.id : null,
-          seller_name: user?.user_metadata?.username || user?.user_metadata?.full_name || newProduct.seller || 'Artisan Seller',
-          image_url: newProduct.image || (newProduct.images && newProduct.images[0]) || '',
-          status: 'active'
-        });
-      } catch (err) {
-        console.warn('Could not insert product into Supabase:', err);
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.product) {
+          setCustomProducts((prev) => [json.product, ...prev.filter((p) => p.id !== newProduct.id)]);
+          return json.product;
+        }
       }
+    } catch (e) {
+      console.warn('[ProductsContext] Backend offline, falling back to optimistic local state:', e.message);
     }
 
     setCustomProducts((prev) => [newProduct, ...prev]);

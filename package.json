@@ -8,14 +8,17 @@
     "server": "node server/index.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test-complete-auction-workflow.js"
+    "test": "node test-complete-auction-workflow.js && node test-socket-migration.js",
+    "test:socket": "node test-socket-migration.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",

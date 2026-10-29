@@ -10,6 +10,7 @@ import {
 } from '../data/auctions';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getSocket } from '../lib/socket';
 
 const AuctionContext = createContext(null);
 const AUCTIONS_STORAGE_KEY = 'veyra_live_auctions_data';
@@ -357,104 +358,97 @@ export const AuctionProvider = ({ children }) => {
     remindersRef.current = reminders;
   }, [reminders]);
 
-  // Real-time server push events via EventSource (SSE)
+  // Real-time server push events via Socket.IO
   useEffect(() => {
-    let es = null;
-    let reconnectTimeout = null;
+    const socket = getSocket();
+    if (!socket) return;
 
-    const connectSSE = () => {
-      try {
-        es = new EventSource('/api/events');
-
-        es.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            const { type, payload } = data;
-
-            if (type === 'AUCTION_STARTED') {
-              const { auction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-              );
-
-              // Notify if reminder set
-              if (remindersRef.current.includes(auction.id)) {
-                addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
-              }
-            } else if (type === 'AUCTION_ENDED') {
-              const { auction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-              );
-              addToast(`Auction concluded for "${auction.name}".`);
-            } else if (type === 'BID_PLACED') {
-              const { auctionId, updatedAuction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-              );
-            } else if (type === 'AUCTION_APPROVED' || type === 'AUCTION_RESCHEDULED') {
-              const { auction } = payload;
-              setCustomAuctions((prev) => {
-                const exists = prev.some((a) => a.id === auction.id);
-                return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
-              });
-            } else if (type === 'AUCTION_CREATED') {
-              const { auction } = payload;
-              setCustomAuctions((prev) => {
-                const exists = prev.some((a) => a.id === auction.id);
-                return exists ? prev : [auction, ...prev];
-              });
-            } else if (type === 'PROXY_BID_PLACED') {
-              const { bid, auctionId } = payload;
-              addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
-            } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
-              const { reason, auctionId } = payload;
-              addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
-            } else if (type === 'COMMENT_ADDED') {
-              const { auctionId, comment } = payload || {};
-              if (auctionId && comment && comment.id) {
-                setComments((prev) => {
-                  const list = prev[auctionId] || [];
-                  if (list.some((c) => c.id === comment.id)) {
-                    return prev;
-                  }
-                  return {
-                    ...prev,
-                    [auctionId]: [...list, comment]
-                  };
-                });
-              }
-            }
-          } catch (err) {}
-        };
-
-        es.onerror = () => {
-          if (es) {
-            es.close();
-            es = null;
-          }
-          // Try to reconnect in 5 seconds
-          reconnectTimeout = setTimeout(connectSSE, 5000);
-        };
-      } catch (err) {}
+    // Resynchronize state upon reconnection to recover any missed updates
+    const handleConnect = () => {
+      syncWithServer();
     };
 
-    connectSSE();
+    const handleRealtimeEvent = (data) => {
+      try {
+        if (!data) return;
+        const { type, payload } = data;
+
+        if (type === 'AUCTION_STARTED') {
+          const { auction } = payload;
+          setLiveAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+          );
+          setCustomAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+          );
+
+          // Notify if reminder set
+          if (remindersRef.current.includes(auction.id)) {
+            addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
+          }
+        } else if (type === 'AUCTION_ENDED') {
+          const { auction } = payload;
+          setLiveAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+          );
+          setCustomAuctions((prev) =>
+            prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+          );
+          addToast(`Auction concluded for "${auction.name}".`);
+        } else if (type === 'BID_PLACED') {
+          const { auctionId, updatedAuction } = payload;
+          setLiveAuctions((prev) =>
+            prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+          );
+          setCustomAuctions((prev) =>
+            prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+          );
+        } else if (type === 'AUCTION_APPROVED' || type === 'AUCTION_RESCHEDULED') {
+          const { auction } = payload;
+          setCustomAuctions((prev) => {
+            const exists = prev.some((a) => a.id === auction.id);
+            return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
+          });
+        } else if (type === 'AUCTION_CREATED') {
+          const { auction } = payload;
+          setCustomAuctions((prev) => {
+            const exists = prev.some((a) => a.id === auction.id);
+            return exists ? prev : [auction, ...prev];
+          });
+        } else if (type === 'PROXY_BID_PLACED') {
+          const { bid, auctionId } = payload;
+          addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
+        } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
+          const { reason, auctionId } = payload;
+          addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
+        } else if (type === 'COMMENT_ADDED') {
+          const { auctionId, comment } = payload || {};
+          if (auctionId && comment && comment.id) {
+            setComments((prev) => {
+              const list = prev[auctionId] || [];
+              if (list.some((c) => c.id === comment.id)) {
+                return prev;
+              }
+              return {
+                ...prev,
+                [auctionId]: [...list, comment]
+              };
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[AuctionContext] Real-time event handling error:', err);
+      }
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('event', handleRealtimeEvent);
 
     return () => {
-      if (es) es.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      socket.off('connect', handleConnect);
+      socket.off('event', handleRealtimeEvent);
     };
-  }, [addToast]);
+  }, [addToast, syncWithServer]);
 
   // Cross-tab broadcast listener for multi-tab synchronization
   useEffect(() => {
@@ -702,27 +696,7 @@ export const AuctionProvider = ({ children }) => {
       };
 
       try {
-        // Try Supabase persistence if user is authenticated
-        if (supabase) {
-          try {
-            const { data: { user } } = await supabase.auth.getUser();
-            await supabase.from('auctions').insert({
-              title: payload.name,
-              description: payload.description || '',
-              starting_price: payload.startingBid,
-              current_price: payload.startingBid,
-              starts_at: new Date(payload.startTimestamp).toISOString(),
-              ends_at: new Date(payload.endTimestamp).toISOString(),
-              seller_id: user ? user.id : null,
-              seller_name: user?.user_metadata?.username || user?.user_metadata?.full_name || payload.seller || 'Studio Atelier',
-              image_url: payload.image || (payload.images && payload.images[0]) || '',
-              status: 'upcoming'
-            });
-          } catch (e) {
-            console.warn('Could not insert auction lot to Supabase:', e);
-          }
-        }
-
+        // Authoritative server persistence (server coordinates Supabase sync, validation & paired catalog)
         const res = await fetch('/api/auctions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
