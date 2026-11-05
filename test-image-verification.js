@@ -87,7 +87,7 @@ function createMockCompletion(contentObject, status = 200, statusText = 'OK') {
       id: 'chatcmpl-groq-' + Math.random().toString(36).slice(2),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model: 'llama-3.2-11b-vision-preview',
+      model: 'qwen/qwen3.8-27b',
       choices: [
         {
           index: 0,
@@ -124,14 +124,14 @@ async function runAllTests() {
     const defaultConfig = getGroqConfig();
     assert.strictEqual(
       defaultConfig.model,
-      'llama-3.2-11b-vision-preview',
-      'Default model must be vision-capable llama-3.2-11b-vision-preview'
+      'qwen/qwen3.8-27b',
+      'Default model must be vision-capable qwen/qwen3.8-27b'
     );
 
     // Setup test environment
     process.env.GROQ_API_KEY = 'gsk_test_mock_key_9988';
     process.env.GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1';
-    process.env.GROQ_VISION_MODEL = 'llama-3.2-11b-vision-preview';
+    process.env.GROQ_VISION_MODEL = 'qwen/qwen3.8-27b';
 
     // =========================================================================
     // SECTION A: IMAGE ACCEPTANCE TESTS (Tests 1-7)

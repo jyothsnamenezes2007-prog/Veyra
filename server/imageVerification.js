@@ -62,7 +62,7 @@ export function getGroqConfig() {
   // Automatically upgrades legacy text-only model 'qwen/qwen3.8-27b' from .env.local to vision-capable model
   const modelEnv = (process.env.GROQ_VISION_MODEL || '').trim();
   const model = (!modelEnv || modelEnv === 'your_groq_vision_model_id' || modelEnv === 'qwen/qwen3.8-27b')
-    ? 'llama-3.2-11b-vision-preview'
+    ? 'qwen/qwen3.8-27b'
     : modelEnv;
 
   return {
@@ -519,10 +519,13 @@ export function isImageAuthorized(imageInput, token, options = {}) {
       return false;
     }
 
-    // Validate token if supplied
-    if (token && record.token !== token) {
-      return false;
-    }
+    // A valid token is mandatory
+  if (
+  typeof token !== 'string' || !token.trim() ||
+  record.token !== token
+  ) {
+    return false;
+  }
 
     // Consume token if requested
     if (shouldConsume) {

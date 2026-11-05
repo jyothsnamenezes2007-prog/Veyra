@@ -1,6 +1,31 @@
 {
   "products": [
     {
+      "id": "prod-custom-1793888304160",
+      "type": "shop",
+      "isAuction": false,
+      "name": "First Authorized Listing",
+      "seller": "Master Studio",
+      "sellerId": "artisan-1",
+      "location": "Studio Atelier",
+      "category": "Handmade",
+      "price": 45000,
+      "image": "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfbzRyc2dmOHkxdg==",
+      "images": [
+        "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfbzRyc2dmOHkxdg=="
+      ],
+      "description": "",
+      "materials": "",
+      "dimensions": "",
+      "condition": "Studio Mint Original",
+      "availability": "In Stock • Studio Direct",
+      "rating": 5,
+      "featured": false,
+      "inStock": true,
+      "listingStatus": "pending",
+      "listedAt": "2026-11-05T14:18:24.160Z"
+    },
+    {
       "id": "prod-custom-1793886426505",
       "type": "shop",
       "isAuction": false,

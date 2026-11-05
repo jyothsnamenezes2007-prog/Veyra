@@ -276,20 +276,27 @@ export async function handleApiRequest(req, res) {
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
 
       // Authoritative image verification check: If an image is provided, it must be verified
-      if (primaryImage) {
-        let authorized = isImageAuthorized(primaryImage, data.verificationToken, true);
-        if (!authorized) {
-          const verifyRes = await verifyProductImage(primaryImage);
-          if (!verifyRes.verified) {
-            sendJson(res, verifyRes.unavailable ? 503 : 400, {
-              success: false,
-              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
-            });
-            return true;
-          }
-          authorized = true;
-        }
-      }
+      if (!primaryImage) {
+  sendJson(res, 400, {
+    success: false,
+    error: 'A product image is required.'
+  });
+  return true;
+}
+
+const authorized = isImageAuthorized(
+  primaryImage,
+  data.verificationToken,
+  true
+);
+
+if (!authorized) {
+  sendJson(res, 400, {
+    success: false,
+    error: 'Image verification is required. Please verify the image again before submitting.'
+  });
+  return true;
+}
 
       const lotId = data.id || ('auc-lot-' + Date.now());
       const prodId = data.productId || ('prod-' + Date.now());
@@ -896,21 +903,27 @@ export async function handleApiRequest(req, res) {
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
 
       // Authoritative image verification check: If an image is provided, it must be verified
-      if (primaryImage) {
-        let authorized = isImageAuthorized(primaryImage, data.verificationToken, true);
-        if (!authorized) {
-          const verifyRes = await verifyProductImage(primaryImage);
-          if (!verifyRes.verified) {
-            sendJson(res, verifyRes.unavailable ? 503 : 400, {
-              success: false,
-              error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
-            });
-            return true;
-          }
-          authorized = true;
-        }
-      }
+      if (!primaryImage) {
+  sendJson(res, 400, {
+    success: false,
+    error: 'A product image is required.'
+  });
+  return true;
+}
 
+const authorized = isImageAuthorized(
+  primaryImage,
+  data.verificationToken,
+  true
+);
+
+if (!authorized) {
+  sendJson(res, 400, {
+    success: false,
+    error: 'Image verification is required. Please verify the image again before submitting.'
+  });
+  return true;
+}
       const newProduct = {
         id: data.id || ('prod-custom-' + Date.now()),
         type: 'shop',
