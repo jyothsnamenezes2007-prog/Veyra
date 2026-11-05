@@ -33,9 +33,11 @@ function veyraBackendPlugin() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), veyraBackendPlugin()],
+  plugins: [react()],
   server: {
+    host: 'localhost',
     port: 3000,
     open: true
   }
 });
+
