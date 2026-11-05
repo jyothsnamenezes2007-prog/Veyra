@@ -277,7 +277,7 @@ export async function handleApiRequest(req, res) {
 
       // Authoritative image verification check: If an image is provided, it must be verified
       if (primaryImage) {
-        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken, true);
         if (!authorized) {
           const verifyRes = await verifyProductImage(primaryImage);
           if (!verifyRes.verified) {
@@ -897,7 +897,7 @@ export async function handleApiRequest(req, res) {
 
       // Authoritative image verification check: If an image is provided, it must be verified
       if (primaryImage) {
-        let authorized = isImageAuthorized(primaryImage, data.verificationToken);
+        let authorized = isImageAuthorized(primaryImage, data.verificationToken, true);
         if (!authorized) {
           const verifyRes = await verifyProductImage(primaryImage);
           if (!verifyRes.verified) {

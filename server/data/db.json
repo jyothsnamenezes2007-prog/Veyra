@@ -1,6 +1,81 @@
 {
   "products": [
     {
+      "id": "prod-custom-1793886426505",
+      "type": "shop",
+      "isAuction": false,
+      "name": "First Authorized Listing",
+      "seller": "Master Studio",
+      "sellerId": "artisan-1",
+      "location": "Studio Atelier",
+      "category": "Handmade",
+      "price": 45000,
+      "image": "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfN2RzYTdzNGh6cHQ=",
+      "images": [
+        "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfN2RzYTdzNGh6cHQ="
+      ],
+      "description": "",
+      "materials": "",
+      "dimensions": "",
+      "condition": "Studio Mint Original",
+      "availability": "In Stock • Studio Direct",
+      "rating": 5,
+      "featured": false,
+      "inStock": true,
+      "listingStatus": "pending",
+      "listedAt": "2026-11-05T13:47:06.505Z"
+    },
+    {
+      "id": "prod-custom-1793886370645",
+      "type": "shop",
+      "isAuction": false,
+      "name": "First Authorized Listing",
+      "seller": "Master Studio",
+      "sellerId": "artisan-1",
+      "location": "Studio Atelier",
+      "category": "Handmade",
+      "price": 45000,
+      "image": "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfdWxucXVkeTNxd2s=",
+      "images": [
+        "data:image/png;base64,dmV5cmFfdGVzdF9pbWFnZV9ieXRlc19zaW5nbGVfdXNlX3Rlc3RfaW1hZ2VfdWxucXVkeTNxd2s="
+      ],
+      "description": "",
+      "materials": "",
+      "dimensions": "",
+      "condition": "Studio Mint Original",
+      "availability": "In Stock • Studio Direct",
+      "rating": 5,
+      "featured": false,
+      "inStock": true,
+      "listingStatus": "pending",
+      "listedAt": "2026-11-05T13:46:10.645Z"
+    },
+    {
+      "id": "prod-custom-1793885451362",
+      "type": "shop",
+      "isAuction": false,
+      "name": "Archival Teak Armchair",
+      "seller": "Pierre Jeanneret Atelier",
+      "sellerId": "artisan-jeanneret",
+      "location": "Studio Atelier",
+      "category": "Handmade",
+      "price": 65000,
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "images": [
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      ],
+      "description": "Handcrafted teak armchair with cane weaving.",
+      "materials": "",
+      "dimensions": "",
+      "condition": "Studio Mint Original",
+      "availability": "In Stock • Studio Direct",
+      "rating": 5,
+      "featured": false,
+      "inStock": true,
+      "listingStatus": "active",
+      "listedAt": "2026-11-05T13:30:51.362Z"
+    },
+    {
       "id": "prod-custom-1793266982668",
       "type": "shop",
       "isAuction": false,
@@ -2349,16 +2424,18 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "active",
+      "status": "ended",
       "startTimestamp": 1793167892859,
       "endTimestamp": 1793427092859,
       "endTime": 1793427092859,
-      "remainingSeconds": 160081,
+      "remainingSeconds": 0,
       "winner": null,
       "bidHistory": [],
       "currentBid": 52000,
       "minIncrement": 2500,
-      "bidCount": 0
+      "bidCount": 0,
+      "winningBid": null,
+      "result": "unsold"
     },
     {
       "id": "up-3",
@@ -2377,16 +2454,18 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "scheduled",
+      "status": "ended",
       "startTimestamp": 1793340692859,
       "endTimestamp": 1793599892859,
       "endTime": 1793599892859,
-      "remainingSeconds": 73681,
+      "remainingSeconds": 0,
       "winner": null,
       "bidHistory": [],
       "currentBid": 78000,
       "minIncrement": 4000,
-      "bidCount": 0
+      "bidCount": 0,
+      "winningBid": null,
+      "result": "unsold"
     },
     {
       "id": "up-4",
@@ -2405,16 +2484,18 @@
       "type": "auction",
       "isAuction": true,
       "approvalStatus": "approved",
-      "status": "scheduled",
+      "status": "ended",
       "startTimestamp": 1793513492859,
       "endTimestamp": 1793772692859,
       "endTime": 1793772692859,
-      "remainingSeconds": 246481,
+      "remainingSeconds": 0,
       "winner": null,
       "bidHistory": [],
       "currentBid": 120000,
       "minIncrement": 6000,
-      "bidCount": 0
+      "bidCount": 0,
+      "winningBid": null,
+      "result": "unsold"
     }
   ],
   "reminders": [
@@ -2561,5 +2642,6 @@
         "timestamp": 1793197577545
       }
     ]
-  }
+  },
+  "payments": []
 }

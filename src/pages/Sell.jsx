@@ -110,7 +110,7 @@ export const Sell = () => {
   // Images state (up to 6 images) - starts empty for seller upload
   const [images, setImages] = useState([]);
 
-  // Image verification states: 'idle' | 'verifying' | 'verified' | 'failed' | 'unavailable'
+  // Image verification states: 'idle' | 'verifying' | 'verified' | 'rejected' | 'failed' | 'unavailable'
   const [verificationStatus, setVerificationStatus] = useState('idle');
   const [verificationMessage, setVerificationMessage] = useState('');
   const [verificationReason, setVerificationReason] = useState('');
@@ -227,10 +227,16 @@ export const Sell = () => {
         setVerificationStatus('unavailable');
         setVerificationMessage('Verification is temporarily unavailable. Please try again.');
         setVerificationReason(data.error || 'The image verification service could not be reached.');
+      } else if (data.rejected || (data.success && data.verified === false)) {
+        // Genuine AI rejection — the model analyzed the image and found specific suitability issues
+        setVerificationStatus('rejected');
+        setVerificationMessage(data.reason || data.error || 'Image verification failed. Please upload a clearer, genuine product photo.');
+        setVerificationReason(data.reason || data.error || '');
       } else {
+        // Unexpected processing error or failure
         setVerificationStatus('failed');
         setVerificationMessage('Image verification failed. Please upload a clearer, genuine product photo.');
-        setVerificationReason(data.reason || data.error || 'The image does not meet quality requirements.');
+        setVerificationReason(data.error || data.reason || 'Please try again or upload a different photo.');
       }
     } catch (err) {
       setVerificationStatus('unavailable');
@@ -367,8 +373,12 @@ export const Sell = () => {
       setFormError('Product image verification is currently in progress. Please wait for verification to complete.');
       return;
     }
+    if (verificationStatus === 'rejected') {
+      setFormError('Image did not pass verification. Please review the suitability feedback and upload a suitable product photo.');
+      return;
+    }
     if (verificationStatus === 'failed') {
-      setFormError('Image verification failed. Please upload a clearer, genuine product photo before proceeding.');
+      setFormError('Image verification encountered an error. Please retry verification before proceeding.');
       return;
     }
     if (verificationStatus === 'unavailable') {
@@ -1273,8 +1283,10 @@ export const Sell = () => {
                         ? '1px solid var(--border-color)'
                         : verificationStatus === 'verified'
                         ? '1px solid #86efac'
-                        : verificationStatus === 'failed'
+                        : verificationStatus === 'rejected'
                         ? '1px solid #fca5a5'
+                        : verificationStatus === 'failed'
+                        ? '1px solid #fed7aa'
                         : verificationStatus === 'unavailable'
                         ? '1px solid #fde047'
                         : '1.5px solid var(--accent-burgundy)',
@@ -1283,8 +1295,10 @@ export const Sell = () => {
                         ? 'var(--surface-secondary)'
                         : verificationStatus === 'verified'
                         ? '#f0fdf4'
-                        : verificationStatus === 'failed'
+                        : verificationStatus === 'rejected'
                         ? '#fef2f2'
+                        : verificationStatus === 'failed'
+                        ? '#fff7ed'
                         : verificationStatus === 'unavailable'
                         ? '#fefce8'
                         : 'var(--surface-secondary)',
@@ -1370,20 +1384,23 @@ export const Sell = () => {
                     </div>
                   )}
 
-                  {/* Status 3: Failed */}
-                  {verificationStatus === 'failed' && (
+                  {/* Status 3: Rejected — AI evaluated the image and found specific suitability issues */}
+                  {verificationStatus === 'rejected' && (
                     <div>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                         <AlertCircle size={20} style={{ color: '#dc2626', marginTop: '2px', flexShrink: 0 }} />
                         <div style={{ flex: 1 }}>
                           <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#b91c1c' }}>
-                            Image verification failed. Please upload a clearer, genuine product photo.
+                            {verificationMessage || 'Image verification failed. Please upload a clearer, genuine product photo.'}
                           </span>
                           {verificationReason && (
-                            <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#991b1b', lineHeight: 1.4 }}>
+                            <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: '#991b1b', lineHeight: 1.5, backgroundColor: 'rgba(220, 38, 38, 0.04)', padding: '8px 10px', borderRadius: 'var(--radius-xs)', border: '1px solid rgba(220, 38, 38, 0.1)' }}>
                               {verificationReason}
                             </p>
                           )}
+                          <div style={{ margin: '8px 0 0 0', fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+                            Suitability assessment by Groq Vision AI. Vintage wear, patina, and studio staging are accepted. You may retry or provide a clearer photo.
+                          </div>
                           <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                             <button
                               type="button"
@@ -1411,6 +1428,45 @@ export const Sell = () => {
                             >
                               <Trash2 size={13} />
                               <span>Remove Photo</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status 4: Failed — Unexpected processing or network error */}
+                  {verificationStatus === 'failed' && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <AlertTriangle size={20} style={{ color: '#ea580c', marginTop: '2px', flexShrink: 0 }} />
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#c2410c' }}>
+                            An unexpected error occurred during verification.
+                          </span>
+                          {verificationReason && (
+                            <p style={{ margin: '4px 0 0 0', fontSize: '11.5px', color: '#9a3412', lineHeight: 1.4 }}>
+                              {verificationReason}
+                            </p>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => runImageVerification(images[0])}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            >
+                              <RefreshCw size={13} />
+                              <span>Retry Verification</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="btn btn-outline btn-sm"
+                              style={{ fontSize: '11.5px', padding: '5px 12px' }}
+                            >
+                              <Upload size={13} />
+                              <span>Replace Photo</span>
                             </button>
                           </div>
                         </div>
@@ -1625,8 +1681,10 @@ export const Sell = () => {
                     ? 'Click "Verify Product Image" above to proceed'
                     : verificationStatus === 'verifying'
                     ? 'Verifying image with Groq Vision AI...'
+                    : verificationStatus === 'rejected'
+                    ? 'Photo not suitable for listing — see reason above'
                     : verificationStatus === 'failed'
-                    ? 'Photo rejected — upload a replacement to proceed'
+                    ? 'Verification error — retry to proceed'
                     : verificationStatus === 'unavailable'
                     ? 'Verification unavailable — retry to proceed'
                     : 'Image verified • Ready for submission'}

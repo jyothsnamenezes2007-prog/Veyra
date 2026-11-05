@@ -58,9 +58,12 @@ export function getGroqConfig() {
   const endpoint = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
   // Vision-capable model confirmed by Groq documentation:
-  // qwen/qwen3.8-27b (or llama-3.2-11b-vision-preview / llama-3.2-90b-vision-preview)
+  // llama-3.2-11b-vision-preview (or llama-3.2-90b-vision-preview)
+  // Automatically upgrades legacy text-only model 'qwen/qwen3.8-27b' from .env.local to vision-capable model
   const modelEnv = (process.env.GROQ_VISION_MODEL || '').trim();
-  const model = (!modelEnv || modelEnv === 'your_groq_vision_model_id') ? 'qwen/qwen3.8-27b' : modelEnv;
+  const model = (!modelEnv || modelEnv === 'your_groq_vision_model_id' || modelEnv === 'qwen/qwen3.8-27b')
+    ? 'llama-3.2-11b-vision-preview'
+    : modelEnv;
 
   return {
     apiKey: isPlaceholderKey ? null : rawKey,
@@ -108,6 +111,10 @@ export function parseImageInput(imageInput) {
   }
 
   // Handle HTTP/HTTPS URL
+  // NOTE: For URLs, we hash the URL string itself rather than downloading the remote image.
+  // This is a known limitation: the hash identifies the URL, not the actual image content.
+  // Downloading remote images would introduce security risks (SSRF) and latency.
+  // The Groq API will fetch the URL directly for vision analysis.
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return {
       type: 'url',
@@ -140,21 +147,53 @@ function buildVerificationPrompt(metadata = {}) {
       (description ? `- Description: ${description}\n` : '');
   }
 
-  return `You are an expert product image verification engine for Veyra, an artisan and collectible marketplace.
-Analyze the provided product photograph to evaluate whether it is suitable for a genuine product listing.${contextInfo}
+  return `You are a product image suitability assessor for Veyra, a curated vintage, antique, collectible and luxury marketplace.
 
-Evaluate against these strict criteria:
-1. Visual clarity & readability: The product must be clearly visible, in focus, not excessively dark, blurry, corrupted, or unreadable.
-2. Genuine physical product depiction: Must depict a plausible physical item (such as furniture, decorative art, ceramics, textiles, jewelry, or collectibles) suitable for catalog listing, rather than pure noise, a blank image, an unrelated screenshot, or invalid content.
-3. Manipulation & AI artifacts: Check for visible signs of digital tampering, heavy synthetic distortion, or bizarre AI structural anomalies.
-4. Watermarks & theft indicators: Check for prominent watermarks, stock photo copyright marks, or stolen listing overlays.
-5. Product consistency: Check whether the photograph reasonably depicts the declared item if product details are provided.
+Your task: determine whether this photograph is suitable for a product listing. You are NOT an authentication authority — you are assessing listing suitability.
+${contextInfo}
+Evaluate the image against these criteria:
 
-IMPORTANT:
-- Normal studio background removal, clean lighting, and catalog staging are completely acceptable.
-- Treat this as an AI visual assessment, NOT absolute proof of physical authenticity. Do not claim that the model can conclusively prove authenticity or identify every AI-generated image.
+1. IMAGE QUALITY — Is the product reasonably visible and identifiable?
+   ACCEPT: adequate lighting, reasonable focus, product distinguishable.
+   REJECT ONLY: severe blur making the product unidentifiable, extreme darkness, corrupted/blank image, or no discernible product.
+   Do NOT reject for minor imperfections, slight grain, or imperfect lighting.
 
-Respond STRICTLY with a valid JSON object in this format (no markdown fences, just JSON):
+2. PHYSICAL PRODUCT DEPICTION — Does the image show a plausible physical object suitable for a marketplace listing?
+   ACCEPT: watches, watch components, jewellery, antiques, furniture, paintings, artwork, ceramics, collectibles, sculptures, decorative objects, vintage accessories, individual components, close-up detail photographs, parts of larger products.
+   REJECT ONLY: screenshots of unrelated software, memes, blank images, pure text documents, or content with no physical product whatsoever.
+   A complete product does NOT need to be visible. Close-ups and detail shots of relevant physical objects are acceptable.
+
+3. AGEING AND NATURAL IMPERFECTIONS — This is critical for a vintage and antique marketplace.
+   The following are EXPECTED and ACCEPTABLE characteristics, NOT signs of manipulation:
+   - Scratches, dust, rust, oxidation, patina, faded colours, discoloration
+   - Natural material irregularities, signs of ageing, minor physical damage, worn surfaces
+   - Tarnished metal, aged wood grain, cracked glaze on ceramics
+   These features are DESIRABLE indicators of authentic vintage and antique items.
+
+4. AI-GENERATED OR MANIPULATED IMAGES — Flag ONLY if you observe clear evidence of:
+   - Impossible object geometry (e.g., objects defying physics)
+   - Severe structural inconsistencies (e.g., melting edges, distorted limbs)
+   - Obvious digital compositing that misrepresents the product
+   Do NOT flag: professional studio lighting, plain backgrounds, clean staging, background removal, high-resolution photography, or unusual but physically plausible details.
+   If uncertain, do NOT reject — note your uncertainty but lean toward acceptance.
+
+5. WATERMARKS AND COPYRIGHT — Flag ONLY:
+   - Prominent third-party watermarks covering significant portions of the image
+   - Stock photo copyright text overlays
+   - Stolen listing watermarks from other marketplaces
+   Do NOT flag: brand logos on products, product engravings, serial numbers, maker's marks, printed labels, hallmarks, or small discrete photographer watermarks.
+
+6. PRODUCT CONSISTENCY — If product details are provided above, check whether the visible object is broadly consistent with the declared information.
+   Do NOT require exact textual matches. Do NOT reject if the seller provided incomplete information.
+   Only flag a clear mismatch (e.g., declared "watch" but image shows a chair).
+
+IMPORTANT GUIDELINES:
+- Default to ACCEPTANCE for borderline cases. Sellers photograph real objects in imperfect conditions.
+- Professional photography (studio lighting, plain backgrounds, clean staging) is completely normal and expected.
+- You are making a suitability assessment, NOT claiming to prove authenticity or detect all AI generation.
+- Vintage and antique items WILL show age — this is a feature, not a defect.
+
+Respond ONLY with a valid JSON object (no markdown fences, no extra text):
 {
   "verified": true,
   "readable": true,
@@ -163,7 +202,10 @@ Respond STRICTLY with a valid JSON object in this format (no markdown fences, ju
   "watermarks": false,
   "confidence": "high",
   "reason": "Clear 1-2 sentence explanation of your assessment."
-}`;
+}
+
+Set "verified" to true if the image is suitable for listing. Set to false ONLY if there is a clear, specific problem.
+Set "confidence" to "high", "medium", or "low".`;
 }
 
 /**
@@ -200,18 +242,42 @@ function extractJsonDecision(rawContent) {
  * Sanitize and validate decision structure from model output
  */
 function sanitizeDecision(raw) {
-  const verified = Boolean(raw.verified);
+  // Strict boolean parsing — only actual boolean true or exact string "true" count as true
+  const parseStrictBool = (val, defaultVal = false) => {
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'string') return val.trim().toLowerCase() === 'true';
+    return defaultVal;
+  };
+
+  const verified = parseStrictBool(raw.verified, false);
+  const readable = parseStrictBool(raw.readable, true);
+  const clearProduct = parseStrictBool(raw.clearProduct, true);
+  const suspiciousArtifacts = parseStrictBool(raw.suspiciousArtifacts, false);
+  const watermarks = parseStrictBool(raw.watermarks, false);
+
+  // Validate confidence is one of the expected values
+  const validConfidences = ['high', 'medium', 'low'];
+  const confidence = validConfidences.includes(String(raw.confidence).toLowerCase())
+    ? String(raw.confidence).toLowerCase()
+    : 'medium';
+
+  const reason = typeof raw.reason === 'string' && raw.reason.trim()
+    ? raw.reason.trim()
+    : typeof raw.explanation === 'string' && raw.explanation.trim()
+    ? raw.explanation.trim()
+    : (verified ? 'Product image meets listing quality criteria.' : 'Image does not meet listing quality requirements.');
+
   return {
     verified,
-    status: raw.status || (verified ? 'verified' : 'rejected'),
-    readable: raw.readable !== false,
-    clearProduct: raw.clearProduct !== false,
-    suspiciousArtifacts: Boolean(raw.suspiciousArtifacts),
-    watermarks: Boolean(raw.watermarks),
-    confidence: raw.confidence || 'high',
+    status: verified ? 'verified' : 'rejected',
+    readable,
+    clearProduct,
+    suspiciousArtifacts,
+    watermarks,
+    confidence,
     findings: Array.isArray(raw.findings) ? raw.findings : [],
     suspiciousSigns: Array.isArray(raw.suspiciousSigns) ? raw.suspiciousSigns : [],
-    reason: raw.reason || raw.explanation || (verified ? 'Product image meets listing quality criteria.' : 'Image does not meet quality requirements.')
+    reason
   };
 }
 
@@ -355,9 +421,9 @@ export async function verifyProductImage(imageInput, metadata = {}) {
     };
   }
 
-  // Check if this exact image has already been verified and is unexpired
+  // Check if this exact image has already been verified, is unexpired, and not consumed
   const existing = verifiedImagesRegistry.get(imageHash);
-  if (existing && existing.verified && (Date.now() - existing.timestamp) < VERIFICATION_TTL_MS) {
+  if (existing && existing.verified && !existing.consumed && (Date.now() - existing.timestamp) < VERIFICATION_TTL_MS) {
     return {
       success: true,
       verified: true,
@@ -406,13 +472,15 @@ export async function verifyProductImage(imageInput, metadata = {}) {
       confidence: decision.confidence
     };
   } else {
-    // Image failed criteria
+    // Image failed criteria — pass through the AI's specific reason
     return {
       success: true,
       verified: false,
+      rejected: true,
       unavailable: false,
-      error: 'Image verification failed. Please upload a clearer, genuine product photo.',
+      error: decision.reason || 'Image does not meet listing quality requirements.',
       reason: decision.reason,
+      confidence: decision.confidence,
       details: {
         readable: decision.readable,
         clearProduct: decision.clearProduct,
@@ -425,9 +493,12 @@ export async function verifyProductImage(imageInput, metadata = {}) {
 
 /**
  * Server-authoritative check whether an image is authorized for listing submission
+ * Supports single-use enforcement when consume is true or requested.
  */
-export function isImageAuthorized(imageInput, token) {
+export function isImageAuthorized(imageInput, token, options = {}) {
   if (!imageInput) return false;
+
+  const shouldConsume = typeof options === 'boolean' ? options : Boolean(options?.consume);
 
   try {
     const imageHash = computeImageHash(imageInput);
@@ -443,15 +514,33 @@ export function isImageAuthorized(imageInput, token) {
       return false;
     }
 
+    // Reject already-consumed tokens (single-use enforcement)
+    if (record.consumed) {
+      return false;
+    }
+
     // Validate token if supplied
     if (token && record.token !== token) {
       return false;
+    }
+
+    // Consume token if requested
+    if (shouldConsume) {
+      record.consumed = true;
+      record.consumedAt = Date.now();
     }
 
     return true;
   } catch (e) {
     return false;
   }
+}
+
+/**
+ * Explicitly consume a single-use verification token after listing submission
+ */
+export function consumeVerificationToken(imageInput, token) {
+  return isImageAuthorized(imageInput, token, true);
 }
 
 /**

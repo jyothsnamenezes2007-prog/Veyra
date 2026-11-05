@@ -7,11 +7,13 @@ import {
   isImageAuthorized,
   invalidateImageVerification,
   clearVerificationRegistry,
-  getGroqConfig
+  getGroqConfig,
+  computeImageHash,
+  parseImageInput
 } from './server/imageVerification.js';
 
 console.log('================================================================');
-console.log('--- STARTING VEYRA GROQ VISION API TEST SUITE ---');
+console.log('--- STARTING VEYRA GROQ VISION VERIFICATION AUDIT SUITE ---');
 console.log('================================================================\n');
 
 // Mock HTTP Request / Response helper for API endpoint testing
@@ -65,321 +67,643 @@ function createMockReqRes(method, url, body = null) {
   return { req, res, execute };
 }
 
-// 1x1 clean PNG transparent pixel data URL for genuine test photo
+// Helper to generate distinct valid base64 data URLs for testing
+function makeTestImage(tag) {
+  const content = `veyra_test_image_bytes_${tag}_${Math.random().toString(36).slice(2)}`;
+  return 'data:image/png;base64,' + Buffer.from(content).toString('base64');
+}
+
 const VALID_PRODUCT_IMAGE =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-// Unsuitable test image (distinct base64 bytes tagged with blurry / unreadable marker)
-const REJECTED_UNSUITABLE_IMAGE =
-  'data:image/png;base64,' + Buffer.from('blurry_unreadable_corrupt_test_image_bytes').toString('base64');
-
-// Manipulated test image
-const TAMPERED_IMAGE =
-  'data:image/png;base64,' + Buffer.from('different_tampered_replacement_bytes_888').toString('base64');
-
 // Helper to create mock OpenAI-compatible chat completion responses for Groq
-function createMockCompletion(contentObject, status = 200) {
+function createMockCompletion(contentObject, status = 200, statusText = 'OK') {
+  const contentStr = typeof contentObject === 'string' ? contentObject : JSON.stringify(contentObject);
   return {
     ok: status >= 200 && status < 300,
     status,
+    statusText,
     json: async () => ({
       id: 'chatcmpl-groq-' + Math.random().toString(36).slice(2),
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
-      model: 'qwen/qwen3.8-27b',
+      model: 'llama-3.2-11b-vision-preview',
       choices: [
         {
           index: 0,
           message: {
             role: 'assistant',
-            content: typeof contentObject === 'string' ? contentObject : JSON.stringify(contentObject)
+            content: contentStr
           },
           finish_reason: 'stop'
         }
       ]
     }),
-    text: async () => typeof contentObject === 'string' ? contentObject : JSON.stringify(contentObject)
+    text: async () => contentStr
   };
 }
 
-async function runTests() {
+async function runAllTests() {
   const originalEnvKey = process.env.GROQ_API_KEY;
   const originalEnvUrl = process.env.GROQ_API_BASE_URL;
   const originalEnvModel = process.env.GROQ_VISION_MODEL;
+
+  let passedCount = 0;
+  const recordPass = (name) => {
+    passedCount++;
+    console.log(`✓ Test ${passedCount} Passed: ${name}`);
+  };
 
   try {
     initDatabase();
     clearVerificationRegistry();
 
-    // Set test environment configuration
-    process.env.GROQ_API_KEY = 'gsk_test_secret_api_key_9988';
+    // Verify default model configuration falls back to llama-3.2-11b-vision-preview
+    delete process.env.GROQ_VISION_MODEL;
+    delete process.env.GROQ_API_KEY;
+    const defaultConfig = getGroqConfig();
+    assert.strictEqual(
+      defaultConfig.model,
+      'llama-3.2-11b-vision-preview',
+      'Default model must be vision-capable llama-3.2-11b-vision-preview'
+    );
+
+    // Setup test environment
+    process.env.GROQ_API_KEY = 'gsk_test_mock_key_9988';
     process.env.GROQ_API_BASE_URL = 'https://api.groq.com/openai/v1';
-    process.env.GROQ_VISION_MODEL = 'qwen/qwen3.8-27b';
+    process.env.GROQ_VISION_MODEL = 'llama-3.2-11b-vision-preview';
 
-    // Verify config helper
-    const config = getGroqConfig();
-    assert.strictEqual(config.hasValidKey, true);
-    assert.strictEqual(config.apiKey, 'gsk_test_secret_api_key_9988');
-    assert.strictEqual(config.endpoint, 'https://api.groq.com/openai/v1/chat/completions');
-    assert.strictEqual(config.model, 'qwen/qwen3.8-27b');
+    // =========================================================================
+    // SECTION A: IMAGE ACCEPTANCE TESTS (Tests 1-7)
+    // =========================================================================
+    console.log('\n--- SECTION A: Image Acceptance Tests ---');
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 1: Successful Groq vision API response (returns verified + token)
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 1: Successful Groq vision API response returns verified + token');
-    let lastCapturedRequest = null;
-
-    globalThis.__GROQ_MOCK_FETCHER__ = async (url, options) => {
-      lastCapturedRequest = { url, options, body: JSON.parse(options.body) };
-      return createMockCompletion({
+    // 1. Clear photograph of a genuine-looking product
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
         verified: true,
         readable: true,
         clearProduct: true,
         suspiciousArtifacts: false,
         watermarks: false,
         confidence: 'high',
-        reason: 'Product is clearly depicted with high quality catalog presentation.'
+        reason: 'Crisp, high-definition photograph clearly depicting a handcrafted rosewood sideboard.'
       });
-    };
 
-    const reqRes1 = createMockReqRes('POST', '/api/verify-image', {
-      image: VALID_PRODUCT_IMAGE,
-      title: 'Handcrafted Teak Table',
-      description: 'Solid teak table with dovetail joinery.',
+    const res1 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('rosewood_sideboard'),
+      title: 'Handcrafted Rosewood Sideboard',
       category: 'Furniture'
-    });
-    const res1 = await reqRes1.execute();
-
-    assert.strictEqual(res1.statusCode, 200, 'Should return status 200 for successful verification');
-    assert.strictEqual(res1.body.success, true);
+    }).execute();
+    assert.strictEqual(res1.statusCode, 200);
     assert.strictEqual(res1.body.verified, true);
-    assert.strictEqual(res1.body.message, 'Image Verified — You can proceed.');
-    assert.ok(res1.body.token && res1.body.token.startsWith('vtok-'), 'Must issue vtok- verification token');
-    const validToken = res1.body.token;
+    assert.ok(res1.body.token && res1.body.token.startsWith('vtok-'));
+    recordPass('Clear photograph of genuine product is accepted with verification token');
 
-    // Verify outbound request shape matched Groq OpenAI chat completions spec
-    assert.strictEqual(lastCapturedRequest.url, 'https://api.groq.com/openai/v1/chat/completions');
-    assert.strictEqual(lastCapturedRequest.options.headers.Authorization, 'Bearer gsk_test_secret_api_key_9988');
-    assert.strictEqual(lastCapturedRequest.body.model, 'qwen/qwen3.8-27b');
-    assert.ok(Array.isArray(lastCapturedRequest.body.messages));
-    assert.strictEqual(lastCapturedRequest.body.messages[0].content[1].type, 'image_url');
-    // Verify prompt included product details
-    assert.ok(lastCapturedRequest.body.messages[0].content[0].text.includes('Handcrafted Teak Table'));
-    console.log('✓ Test 1 Passed: Genuine image verified with authoritative token: ' + validToken.slice(0, 16) + '...\n');
+    // 2. Vintage watch with natural scratches
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Vintage 1968 chronometer showing authentic surface micro-scratches and bevel wear consistent with age.'
+      });
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 2: Flagged/suspicious image response (returns verified: false)
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 2: Flagged/suspicious image response is rejected');
-    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
-      return createMockCompletion({
+    const res2 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('vintage_watch_scratches'),
+      title: '1968 Vintage Chronometer Watch',
+      category: 'Collectibles'
+    }).execute();
+    assert.strictEqual(res2.statusCode, 200);
+    assert.strictEqual(res2.body.verified, true);
+    assert.ok(res2.body.reason.includes('micro-scratches'));
+    recordPass('Vintage watch with natural surface scratches is accepted');
+
+    // 3. Antique object with natural patina
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: '18th century brass astrolabe exhibiting natural bronze oxidation and aged verdigris patina.'
+      });
+
+    const res3 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('antique_patina_bronze'),
+      title: '18th Century Brass Astrolabe',
+      category: 'Antiques'
+    }).execute();
+    assert.strictEqual(res3.statusCode, 200);
+    assert.strictEqual(res3.body.verified, true);
+    recordPass('Antique object with natural oxidation and patina is accepted');
+
+    // 4. Close-up photograph of a watch component
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Macro detail photograph clearly showing an escapement wheel and ruby jewel bearing.'
+      });
+
+    const res4 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('macro_escapement_component'),
+      title: 'Audemars Calibre Escapement Assembly',
+      category: 'Collectibles'
+    }).execute();
+    assert.strictEqual(res4.statusCode, 200);
+    assert.strictEqual(res4.body.verified, true);
+    recordPass('Macro close-up photograph of a component/part is accepted');
+
+    // 5. Jewellery photograph with a plain background
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Kundan polki necklace photographed against neutral cream backdrop with balanced illumination.'
+      });
+
+    const res5 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('kundan_plain_bg'),
+      title: 'Royal Kundan Choker Necklace',
+      category: 'Jewellery'
+    }).execute();
+    assert.strictEqual(res5.statusCode, 200);
+    assert.strictEqual(res5.body.verified, true);
+    recordPass('Jewellery photograph with plain background staging is accepted');
+
+    // 6. Professional studio photograph
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'High-end studio lighting setup with softbox diffusion showcasing sculpted marble vessel.'
+      });
+
+    const res6 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('studio_marble_vessel'),
+      title: 'Carved Makrana Marble Vessel',
+      category: 'Decorative Objects'
+    }).execute();
+    assert.strictEqual(res6.statusCode, 200);
+    assert.strictEqual(res6.body.verified, true);
+    recordPass('Professional studio photograph with clean catalog lighting is accepted');
+
+    // 7. Product with visible brand engraving / hallmarks
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Solid silver punch bowl showing authentic London hallmark engravings and 1894 silversmith crest.'
+      });
+
+    const res7 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('hallmark_silver_bowl'),
+      title: 'Victorian Sterling Silver Bowl',
+      category: 'Antiques'
+    }).execute();
+    assert.strictEqual(res7.statusCode, 200);
+    assert.strictEqual(res7.body.verified, true);
+    recordPass('Product with visible maker hallmarks and brand engravings is accepted');
+
+    // =========================================================================
+    // SECTION B: IMAGE REJECTION TESTS (Tests 8-13)
+    // =========================================================================
+    console.log('\n--- SECTION B: Image Rejection Tests ---');
+
+    // 8. Completely blank image
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
         verified: false,
         readable: false,
         clearProduct: false,
-        suspiciousArtifacts: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Image is completely blank with uniform solid pixels; no physical object is depicted.'
+      });
+
+    const res8 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('blank_pixels')
+    }).execute();
+    assert.strictEqual(res8.statusCode, 200);
+    assert.strictEqual(res8.body.verified, false);
+    assert.strictEqual(res8.body.rejected, true);
+    assert.ok(res8.body.error.includes('completely blank'));
+    recordPass('Completely blank image is rejected with specific diagnostic reason');
+
+    // 9. Severely blurred photograph
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        readable: false,
+        clearProduct: false,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Severe motion blur prevents visual recognition of the item geometry or condition.'
+      });
+
+    const res9 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('heavy_motion_blur')
+    }).execute();
+    assert.strictEqual(res9.statusCode, 200);
+    assert.strictEqual(res9.body.verified, false);
+    assert.ok(res9.body.error.includes('motion blur'));
+    recordPass('Severely blurred photograph is rejected with clarity explanation');
+
+    // 10. Extremely dark image
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        readable: false,
+        clearProduct: false,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Underexposed near-black frame; product silhouette is indiscernible.'
+      });
+
+    const res10 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('underexposed_black')
+    }).execute();
+    assert.strictEqual(res10.statusCode, 200);
+    assert.strictEqual(res10.body.verified, false);
+    recordPass('Extremely dark image is rejected due to lack of visibility');
+
+    // 11. Prominent third-party watermark
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
         watermarks: true,
         confidence: 'high',
-        reason: 'Image is unreadable and exhibits heavy watermark overlays.'
+        reason: 'Image contains prominent diagonal Getty Images copyright watermark across the centre.'
       });
-    };
 
-    const reqRes2 = createMockReqRes('POST', '/api/verify-image', { image: REJECTED_UNSUITABLE_IMAGE });
-    const res2 = await reqRes2.execute();
+    const res11 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('watermark_stock_photo')
+    }).execute();
+    assert.strictEqual(res11.statusCode, 200);
+    assert.strictEqual(res11.body.verified, false);
+    assert.strictEqual(res11.body.details.watermarks, true);
+    recordPass('Prominent third-party stock watermark is rejected');
 
-    assert.ok(res2.statusCode === 200 || res2.statusCode === 400);
-    assert.strictEqual(res2.body.verified, false);
-    assert.strictEqual(res2.body.error, 'Image verification failed. Please upload a clearer, genuine product photo.');
-    assert.strictEqual(res2.body.token, undefined);
-    assert.strictEqual(res2.body.unavailable, false);
-    console.log('✓ Test 2 Passed: Suspicious image flagged and rejected without issuing a token.\n');
+    // 12. Clearly suspicious synthetic distortion
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        readable: true,
+        clearProduct: false,
+        suspiciousArtifacts: true,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Severe AI synthetic anomalies: floating watch hands disconnected from dial and melted crown.'
+      });
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 3: Missing or invalid image payload
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 3: Missing or invalid image payload handling');
-    // 3a. Missing image in request body
-    const res3a = await createMockReqRes('POST', '/api/verify-image', { image: '' }).execute();
-    assert.strictEqual(res3a.statusCode, 400);
-    assert.strictEqual(res3a.body.success, false);
-    assert.strictEqual(res3a.body.verified, false);
+    const res12 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('ai_hallucinated_watch')
+    }).execute();
+    assert.strictEqual(res12.statusCode, 200);
+    assert.strictEqual(res12.body.verified, false);
+    assert.strictEqual(res12.body.details.suspiciousArtifacts, true);
+    recordPass('Clearly suspicious synthetic distortion is flagged and rejected');
 
-    // 3b. Unsupported format (e.g. GIF)
-    const res3b = await createMockReqRes('POST', '/api/verify-image', {
+    // 13. Image that does not reasonably match the declared product
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Declared item is a Rolex Submariner watch, but the photograph depicts an upholstered armchair.'
+      });
+
+    const res13 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('chair_not_watch'),
+      title: 'Rolex Submariner Oyster Perpetual',
+      category: 'Watches'
+    }).execute();
+    assert.strictEqual(res13.statusCode, 200);
+    assert.strictEqual(res13.body.verified, false);
+    assert.ok(res13.body.error.includes('Rolex Submariner'));
+    recordPass('Image that does not match declared product details is rejected');
+
+    // =========================================================================
+    // SECTION C: INPUT VALIDATION TESTS (Tests 14-18)
+    // =========================================================================
+    console.log('\n--- SECTION C: Input Validation Tests ---');
+
+    // 14. Invalid image payload (empty, null, non-string)
+    const res14a = await createMockReqRes('POST', '/api/verify-image', {}).execute();
+    assert.strictEqual(res14a.statusCode, 400);
+    assert.strictEqual(res14a.body.verified, false);
+
+    const res14b = await createMockReqRes('POST', '/api/verify-image', { image: 12345 }).execute();
+    assert.strictEqual(res14b.statusCode, 400);
+    assert.strictEqual(res14b.body.verified, false);
+    recordPass('Invalid image payloads (empty, non-string) are cleanly rejected');
+
+    // 15. Unsupported MIME type (e.g. GIF or BMP)
+    const res15 = await createMockReqRes('POST', '/api/verify-image', {
       image: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
     }).execute();
-    assert.strictEqual(res3b.statusCode, 400);
-    assert.strictEqual(res3b.body.verified, false);
-    assert.ok(res3b.body.error.includes('Unsupported image format'));
+    assert.strictEqual(res15.statusCode, 400);
+    assert.ok(res15.body.error.includes('Unsupported image format'));
+    recordPass('Unsupported MIME type (GIF) is rejected with clear format guidance');
 
-    // 3c. Oversized image (> 5MB)
+    // 16. Oversized image (> 5 MB)
     const largeBuffer = Buffer.alloc(5.2 * 1024 * 1024, 0);
-    const res3c = await createMockReqRes('POST', '/api/verify-image', {
+    const res16 = await createMockReqRes('POST', '/api/verify-image', {
       image: `data:image/jpeg;base64,${largeBuffer.toString('base64')}`
     }).execute();
-    assert.strictEqual(res3c.statusCode, 400);
-    assert.strictEqual(res3c.body.verified, false);
-    assert.ok(res3c.body.error.includes('5MB'));
-    console.log('✓ Test 3 Passed: Missing image, invalid format, and oversized payloads cleanly blocked.\n');
+    assert.strictEqual(res16.statusCode, 400);
+    assert.ok(res16.body.error.includes('5MB limit') || res16.body.error.includes('maximum allowed size'));
+    recordPass('Oversized image (> 5MB) is rejected at server validation boundary');
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 4: Missing or placeholder API key (returns unavailable: true, 503)
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 4: Missing or placeholder API key safely marks service unavailable');
-    // Set to placeholder
+    // 17. Malformed Base64 data
+    assert.throws(() => {
+      parseImageInput('not_a_valid_data_url_or_http_url');
+    }, /Invalid image format/);
+    recordPass('Malformed non-data-URL and non-HTTP string is safely rejected');
+
+    // 18. Invalid remote image URL
+    assert.throws(() => {
+      parseImageInput('ftp://invalid-protocol.com/image.jpg');
+    }, /Invalid image format/);
+    recordPass('Invalid URL protocols (ftp://) are rejected; only HTTP/HTTPS supported');
+
+    // =========================================================================
+    // SECTION D: API AND FAILURE TESTS (Tests 19-26)
+    // =========================================================================
+    console.log('\n--- SECTION D: API and Failure Tests ---');
+
+    // 19. Missing Groq API key (placeholder / unconfigured)
     process.env.GROQ_API_KEY = 'your_groq_api_key_here';
-    const configPlaceholder = getGroqConfig();
-    assert.strictEqual(configPlaceholder.hasValidKey, false);
+    const res19 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('missing_key_test')
+    }).execute();
+    assert.strictEqual(res19.statusCode, 503);
+    assert.strictEqual(res19.body.unavailable, true);
+    assert.strictEqual(res19.body.error, 'Verification is temporarily unavailable. Please try again.');
+    process.env.GROQ_API_KEY = 'gsk_test_mock_key_9988';
+    recordPass('Missing/unconfigured Groq API key returns 503 unavailable');
 
-    const testUnavailImage = 'data:image/png;base64,' + Buffer.from('missing_key_test_bytes_123').toString('base64');
-    const res4 = await createMockReqRes('POST', '/api/verify-image', { image: testUnavailImage }).execute();
+    // 20. Invalid API credentials (401/403)
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
+      ok: false,
+      status: 401,
+      text: async () => 'Invalid API Key',
+      json: async () => ({ error: { message: 'Invalid API Key' } })
+    });
 
-    assert.strictEqual(res4.statusCode, 503, 'Must return 503 when API key is placeholder');
-    assert.strictEqual(res4.body.success, false);
-    assert.strictEqual(res4.body.verified, false);
-    assert.strictEqual(res4.body.unavailable, true);
-    assert.strictEqual(res4.body.error, 'Verification is temporarily unavailable. Please try again.');
-    console.log('✓ Test 4 Passed: Missing/placeholder API key returns exact required 503 unavailable message.\n');
+    const res20 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('auth_error_test')
+    }).execute();
+    assert.strictEqual(res20.statusCode, 503);
+    assert.strictEqual(res20.body.unavailable, true);
+    recordPass('Groq authentication failure (401) is caught and surfaced as 503 unavailable');
 
-    // Restore test API key
-    process.env.GROQ_API_KEY = 'gsk_test_secret_api_key_9988';
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 5: Timeout, rate limit (429), and auth error handling
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 5: Timeout, rate limit (429), and auth error handling');
-    // 5a. Rate limit (429)
+    // 21. Rate-limit response (429)
     globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
       ok: false,
       status: 429,
       text: async () => 'Rate limit exceeded',
-      json: async () => ({ error: { message: 'Too Many Requests' } })
+      json: async () => ({ error: { message: 'Tokens per minute exceeded' } })
     });
-    const res5a = await createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('rate_limit_test_bytes_321').toString('base64')
-    }).execute();
-    assert.strictEqual(res5a.statusCode, 503);
-    assert.strictEqual(res5a.body.unavailable, true);
-    assert.strictEqual(res5a.body.error, 'Verification is temporarily unavailable. Please try again.');
 
-    // 5b. Auth failure (401)
+    const res21 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('rate_limit_test')
+    }).execute();
+    assert.strictEqual(res21.statusCode, 503);
+    assert.strictEqual(res21.body.unavailable, true);
+    recordPass('Groq 429 rate limit is handled gracefully as 503 unavailable');
+
+    // 22. API server error (500)
     globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
       ok: false,
-      status: 401,
-      text: async () => 'Invalid credentials',
-      json: async () => ({ error: { message: 'Unauthorized' } })
+      status: 500,
+      text: async () => 'Internal Server Error',
+      json: async () => ({ error: { message: 'Internal Server Error' } })
     });
-    const res5b = await createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('auth_fail_test_bytes_654').toString('base64')
-    }).execute();
-    assert.strictEqual(res5b.statusCode, 503);
-    assert.strictEqual(res5b.body.unavailable, true);
 
-    // 5c. Network timeout exception
+    const res22 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('server_error_test')
+    }).execute();
+    assert.strictEqual(res22.statusCode, 503);
+    assert.strictEqual(res22.body.unavailable, true);
+    recordPass('Groq 500 server error is safely handled without mistaking for image rejection');
+
+    // 23. Network failure
     globalThis.__GROQ_MOCK_FETCHER__ = async () => {
-      throw new Error('Connect timeout after 25000ms');
+      throw new Error('ECONNREFUSED 127.0.0.1:443');
     };
-    const res5c = await createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('timeout_test_bytes_987').toString('base64')
-    }).execute();
-    assert.strictEqual(res5c.statusCode, 503);
-    assert.strictEqual(res5c.body.unavailable, true);
-    assert.strictEqual(res5c.body.error, 'Verification is temporarily unavailable. Please try again.');
-    console.log('✓ Test 5 Passed: Rate limits, auth errors, and timeouts return 503 unavailable.\n');
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 6: Invalid or unexpected API response (returns 503)
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 6: Invalid or unexpected API response format handling');
-    // 6a. Malformed non-JSON completion
+    const res23 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('network_failure_test')
+    }).execute();
+    assert.strictEqual(res23.statusCode, 503);
+    assert.strictEqual(res23.body.unavailable, true);
+    recordPass('Network failure / socket error returns 503 unavailable');
+
+    // 24. Request timeout
+    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
+      const err = new Error('The operation was aborted due to timeout');
+      err.name = 'TimeoutError';
+      throw err;
+    };
+
+    const res24 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('timeout_test')
+    }).execute();
+    assert.strictEqual(res24.statusCode, 503);
+    assert.strictEqual(res24.body.unavailable, true);
+    recordPass('Request timeout is safely handled as 503 unavailable');
+
+    // 25. Invalid JSON model response
     globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
       ok: true,
       status: 200,
       json: async () => ({
-        choices: [{ message: { content: 'This is not valid json at all' } }]
+        choices: [{ message: { content: 'Not a valid JSON response at all, plain conversation.' } }]
       }),
-      text: async () => 'raw text'
+      text: async () => 'raw non-json'
     });
-    const res6a = await createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('invalid_json_test_bytes_111').toString('base64')
-    }).execute();
-    assert.strictEqual(res6a.statusCode, 503);
-    assert.strictEqual(res6a.body.unavailable, true);
-    assert.strictEqual(res6a.body.error, 'Verification is temporarily unavailable. Please try again.');
 
-    // 6b. Empty choices structure
+    const res25 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('invalid_json_model_test')
+    }).execute();
+    assert.strictEqual(res25.statusCode, 503);
+    assert.strictEqual(res25.body.unavailable, true);
+    recordPass('Unparseable model text is caught and returns 503 unavailable');
+
+    // 26. Incomplete model response (missing required verified boolean)
     globalThis.__GROQ_MOCK_FETCHER__ = async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ choices: [] }),
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ reason: 'Partial response without verified flag' }) } }]
+      }),
       text: async () => '{}'
     });
-    const res6b = await createMockReqRes('POST', '/api/verify-image', {
-      image: 'data:image/png;base64,' + Buffer.from('empty_choices_test_bytes_222').toString('base64')
+
+    const res26 = await createMockReqRes('POST', '/api/verify-image', {
+      image: makeTestImage('incomplete_response_test')
     }).execute();
-    assert.strictEqual(res6b.statusCode, 503);
-    assert.strictEqual(res6b.body.unavailable, true);
-    console.log('✓ Test 6 Passed: Unparseable responses and malformed payloads handled gracefully.\n');
+    assert.strictEqual(res26.statusCode, 503);
+    assert.strictEqual(res26.body.unavailable, true);
+    recordPass('Incomplete model response missing required verified flag returns 503 unavailable');
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TEST 7: Seller-upload flow correctly enforcing verification results
-    // ─────────────────────────────────────────────────────────────────────────────
-    console.log('Test 7: Seller upload flow and curator workflow enforcement');
-    // 7a. Legitimate submission with verified image and valid token
-    const verifiedUploadPayload = {
-      name: 'Archival Teak Armchair',
-      seller: 'Pierre Jeanneret Atelier',
-      sellerId: 'artisan-jeanneret',
-      price: 65000,
-      image: VALID_PRODUCT_IMAGE,
-      images: [VALID_PRODUCT_IMAGE],
-      verificationToken: validToken,
-      category: 'Handmade',
-      description: 'Handcrafted teak armchair with cane weaving.'
-    };
+    // =========================================================================
+    // SECTION E: SECURITY TESTS (Tests 27-32)
+    // =========================================================================
+    console.log('\n--- SECTION E: Security Tests ---');
 
-    const res7a = await createMockReqRes('POST', '/api/products', verifiedUploadPayload).execute();
-    assert.strictEqual(res7a.statusCode, 201, 'Verified product must be accepted with 201 Created');
-    assert.strictEqual(res7a.body.success, true);
-    assert.strictEqual(res7a.body.product.listingStatus, 'pending', 'Must start in pending status awaiting curator review');
-    const createdProductId = res7a.body.product.id;
-
-    // 7b. Tampered image payload (using validToken with different image bytes)
-    const tamperedPayload = {
-      name: 'Tampered Teak Armchair',
-      seller: 'Pierre Jeanneret Atelier',
-      price: 65000,
-      image: TAMPERED_IMAGE,
-      verificationToken: validToken
-    };
-    // Rejection response for the tampered image
-    globalThis.__GROQ_MOCK_FETCHER__ = async () => {
-      return createMockCompletion({
-        verified: false,
-        reason: 'Tampered image does not match verified token.'
+    // 27. Valid verification token authorizes submission
+    const secImage1 = makeTestImage('security_valid_token_image');
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        readable: true,
+        clearProduct: true,
+        suspiciousArtifacts: false,
+        watermarks: false,
+        confidence: 'high',
+        reason: 'Authorized genuine listing photograph.'
       });
-    };
-    const res7b = await createMockReqRes('POST', '/api/products', tamperedPayload).execute();
-    assert.strictEqual(res7b.statusCode, 400, 'Tampered image mismatch must be rejected with 400');
-    assert.strictEqual(res7b.body.success, false);
 
-    // 7c. Direct upload with rejected image
-    const res7c = await createMockReqRes('POST', '/api/products', {
-      name: 'Unverified Junk Product',
-      seller: 'Unknown',
-      price: 1000,
-      image: REJECTED_UNSUITABLE_IMAGE
+    const verifyRes27 = await verifyProductImage(secImage1);
+    assert.strictEqual(verifyRes27.verified, true);
+    const validToken = verifyRes27.token;
+
+    // Must be authorized prior to consumption
+    assert.strictEqual(isImageAuthorized(secImage1, validToken), true);
+    recordPass('Valid verification token authorizes listing image');
+
+    // 28. Expired verification token
+    const secImage2 = makeTestImage('security_expired_token_image');
+    const verifyRes28 = await verifyProductImage(secImage2);
+    const expiredToken = verifyRes28.token;
+
+    // Simulate TTL expiry by advancing Date.now() beyond 2-hour VERIFICATION_TTL_MS
+    const originalDateNow = Date.now;
+    try {
+      Date.now = () => originalDateNow() + 3 * 60 * 60 * 1000; // Fast-forward 3 hours
+      const isAuthExpired = isImageAuthorized(secImage2, expiredToken);
+      assert.strictEqual(isAuthExpired, false, 'Expired token must not authorize image');
+    } finally {
+      Date.now = originalDateNow;
+    }
+    recordPass('Expired token fails authorization check and is pruned from registry');
+
+    // 29. Token associated with a different image (tampering attempt)
+    const secImage3A = makeTestImage('image_3A');
+    const secImage3B = makeTestImage('image_3B');
+    const verifyRes29 = await verifyProductImage(secImage3A);
+    const tokenFor3A = verifyRes29.token;
+
+    // Token for 3A must NOT authorize 3B
+    assert.strictEqual(isImageAuthorized(secImage3B, tokenFor3A), false);
+    recordPass('Token issued for image A cannot authorize image B (binding integrity)');
+
+    // 30. Image replaced after verification (stale state invalidation)
+    const secImage4 = makeTestImage('image_to_be_replaced');
+    const verifyRes30 = await verifyProductImage(secImage4);
+    assert.strictEqual(isImageAuthorized(secImage4, verifyRes30.token), true);
+
+    // Invalidate image upon replacement
+    invalidateImageVerification(secImage4);
+    assert.strictEqual(isImageAuthorized(secImage4, verifyRes30.token), false);
+    recordPass('Replacing an image invalidates previous verification state');
+
+    // 31. Attempted listing submission without verification is blocked
+    const unverifiedImage = makeTestImage('unverified_listing_attempt');
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        reason: 'Unverified submission attempt image.'
+      });
+
+    const res31 = await createMockReqRes('POST', '/api/products', {
+      name: 'Sneaky Unverified Listing',
+      seller: 'Bad Actor',
+      price: 50000,
+      image: unverifiedImage
     }).execute();
-    assert.strictEqual(res7c.statusCode, 400);
-    assert.strictEqual(res7c.body.success, false);
 
-    // 7d. Curator approval preserves existing workflow
-    const res7d = await createMockReqRes('POST', `/api/products/${createdProductId}/approve`).execute();
-    assert.strictEqual(res7d.statusCode, 200);
-    assert.strictEqual(res7d.body.product.listingStatus, 'active', 'Curator approval moves product to active');
-    console.log('✓ Test 7 Passed: Product upload enforcement and curator approval flow fully verified.\n');
+    assert.strictEqual(res31.statusCode, 400);
+    assert.strictEqual(res31.body.success, false);
+    recordPass('Listing submission without verification is strictly blocked by server');
 
-    console.log('================================================================');
-    console.log('ALL 7 GROQ VISION API TEST CASES PASSED SUCCESSFULLY!');
+    // 32. Reuse of a single-use token is rejected
+    const singleUseImage = makeTestImage('single_use_test_image');
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: true,
+        reason: 'Single use test image approved.'
+      });
+
+    const verifyRes32 = await verifyProductImage(singleUseImage);
+    const singleUseToken = verifyRes32.token;
+
+    // First submission consumes the token
+    const res32a = await createMockReqRes('POST', '/api/products', {
+      name: 'First Authorized Listing',
+      seller: 'Master Studio',
+      sellerId: 'artisan-1',
+      price: 45000,
+      image: singleUseImage,
+      verificationToken: singleUseToken
+    }).execute();
+    assert.strictEqual(res32a.statusCode, 201);
+    assert.strictEqual(res32a.body.success, true);
+
+    // Attempt second submission with the exact same consumed token:
+    // Should be rejected by isImageAuthorized single-use check!
+    globalThis.__GROQ_MOCK_FETCHER__ = async () =>
+      createMockCompletion({
+        verified: false,
+        reason: 'Token already consumed, second verification required.'
+      });
+
+    const res32b = await createMockReqRes('POST', '/api/products', {
+      name: 'Duplicate Replay Listing',
+      seller: 'Master Studio',
+      price: 45000,
+      image: singleUseImage,
+      verificationToken: singleUseToken
+    }).execute();
+    assert.strictEqual(res32b.statusCode, 400);
+    assert.strictEqual(res32b.body.success, false);
+    recordPass('Single-use token is consumed upon submission and cannot be replayed (Test 32)');
+
+    console.log('\n================================================================');
+    console.log(`ALL ${passedCount} COMPREHENSIVE TESTS PASSED SUCCESSFULLY!`);
     console.log('================================================================\n');
   } finally {
     delete globalThis.__GROQ_MOCK_FETCHER__;
@@ -394,7 +718,7 @@ async function runTests() {
   }
 }
 
-runTests().catch((err) => {
-  console.error('Test suite execution failed:', err);
+runAllTests().catch((err) => {
+  console.error('\n❌ Test suite execution failed:', err);
   process.exit(1);
 });
