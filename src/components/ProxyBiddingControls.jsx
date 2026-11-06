@@ -1,17 +1,38 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bot, ShieldCheck, AlertCircle, CheckCircle2, Sliders, X, RefreshCw, PowerOff } from 'lucide-react';
 import { formatINR } from '../data/products';
 import { useAuctions } from '../context/AuctionContext';
 import { useAuth } from '../context/AuthContext';
+import { getSocket } from '../lib/socket';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export const ProxyBiddingControls = ({ auction }) => {
-  const { getProxyBidConfig, enableProxyBid, disableProxyBid } = useAuctions();
+  const { getProxyBidConfig, enableProxyBid, disableProxyBid, proxyConfigs } = useAuctions();
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [config, setConfig] = useState(null);
+  const currentUserId = user?.id || null;
+  const prevUserIdRef = useRef(currentUserId);
+  const [localConfig, setLocalConfig] = useState(null);
+
+  // Reset localConfig whenever authenticated user ID changes to prevent stale account state leakage
+  useEffect(() => {
+    if (prevUserIdRef.current !== currentUserId) {
+      setLocalConfig(null);
+      prevUserIdRef.current = currentUserId;
+    }
+  }, [currentUserId]);
+
+  // Authoritative config: derived reactively from centralized proxyConfigs for this auction lot
+  // Validates ownership so that any configuration from a previous user is never displayed
+  const resolvedConfig = (auction?.id && proxyConfigs && proxyConfigs[auction.id] !== undefined)
+    ? proxyConfigs[auction.id]
+    : localConfig;
+
+  const config = (resolvedConfig && currentUserId && resolvedConfig.userId === currentUserId)
+    ? resolvedConfig
+    : null;
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,14 +64,14 @@ export const ProxyBiddingControls = ({ auction }) => {
   // Fetch backend proxy config whenever user or auction changes
   const loadBackendConfig = useCallback(async () => {
     if (!auction?.id || !user?.id) {
-      setConfig(null);
+      setLocalConfig(null);
       return;
     }
     setLoading(true);
     try {
       const res = await getProxyBidConfig(auction.id, user.id);
       if (res && res.success) {
-        setConfig(res.config || null);
+        setLocalConfig(res.config || null);
         if (res.geminiStatus) {
           setGeminiStatus(res.geminiStatus);
         }
@@ -64,6 +85,21 @@ export const ProxyBiddingControls = ({ auction }) => {
 
   useEffect(() => {
     loadBackendConfig();
+  }, [loadBackendConfig]);
+
+  // Handle reconnects cleanly without creating duplicate listeners
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleReconnect = () => {
+      loadBackendConfig();
+    };
+
+    socket.on('connect', handleReconnect);
+    return () => {
+      socket.off('connect', handleReconnect);
+    };
   }, [loadBackendConfig]);
 
   // Open modal with pre-populated values
@@ -138,7 +174,7 @@ export const ProxyBiddingControls = ({ auction }) => {
       });
 
       if (res && res.success) {
-        setConfig(res.config);
+        setLocalConfig(res.config);
         if (res.geminiStatus) setGeminiStatus(res.geminiStatus);
         setIsModalOpen(false);
       } else {
@@ -158,7 +194,7 @@ export const ProxyBiddingControls = ({ auction }) => {
     try {
       const res = await disableProxyBid(auction.id, user.id);
       if (res && res.success) {
-        setConfig(res.config);
+        setLocalConfig(res.config);
       }
     } catch (err) {
       console.warn('Failed to disable proxy bidding:', err);

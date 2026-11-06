@@ -9,6 +9,7 @@ import {
   getMeetingAccess
 } from '../data/auctions';
 import { useToast } from './ToastContext';
+import { useAuth } from './AuthContext';
 import { getSocket } from '../lib/socket';
 
 const AuctionContext = createContext(null);
@@ -21,6 +22,14 @@ const AUCTION_COMMENTS_KEY = 'veyra_auction_comments';
 
 export const AuctionProvider = ({ children }) => {
   const { addToast } = useToast();
+
+  let authUser = null;
+  try {
+    const auth = useAuth();
+    authUser = auth?.user || null;
+  } catch (e) {
+    authUser = null;
+  }
 
   // 1. Base Demo / Live Auctions state
   const [liveAuctions, setLiveAuctions] = useState(() => {
@@ -148,6 +157,21 @@ export const AuctionProvider = ({ children }) => {
       return {};
     }
   });
+
+  // 8. Reactive proxy-bidding configurations for authenticated buyer
+  const [proxyConfigs, setProxyConfigs] = useState({});
+  const currentUserId = authUser?.id || null;
+  const prevUserIdRef = useRef(currentUserId);
+  const userRef = useRef(authUser);
+
+  // Clear proxy configurations whenever authenticated user ID changes (including Buyer A -> Buyer B switch)
+  useEffect(() => {
+    userRef.current = authUser;
+    if (prevUserIdRef.current !== currentUserId) {
+      setProxyConfigs({});
+      prevUserIdRef.current = currentUserId;
+    }
+  }, [currentUserId, authUser]);
 
   // Storage persistence effects
   useEffect(() => {
@@ -332,18 +356,79 @@ export const AuctionProvider = ({ children }) => {
       });
     };
 
+    const handleProxyConfigUpdated = (payload) => {
+      const { auctionId, config } = payload || {};
+      if (!auctionId || !config) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = config.userId || payload.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      setProxyConfigs((prev) => ({
+        ...prev,
+        [auctionId]: {
+          ...(prev[auctionId] || {}),
+          ...config
+        }
+      }));
+    };
+
     const handleProxyBidPlaced = (payload) => {
-      const { bid, auctionId } = payload || {};
-      if (bid?.amount && auctionId) {
+      const { bid, auctionId, proxyConfig } = payload || {};
+      if (!auctionId) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = proxyConfig?.userId || bid?.bidderId || payload?.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      if (bid?.amount) {
         addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
       }
+
+      setProxyConfigs((prev) => {
+        const existing = prev[auctionId] || proxyConfig || {};
+        return {
+          ...prev,
+          [auctionId]: {
+            ...existing,
+            ...(proxyConfig || {}),
+            lastBidAmount: bid?.amount || existing.lastBidAmount,
+            lastBidTime: bid?.timestamp || Date.now(),
+            status: existing.status || 'active'
+          }
+        };
+      });
     };
 
     const handleProxyBidLimitExceeded = (payload) => {
-      const { reason, auctionId } = payload || {};
-      if (reason && auctionId) {
+      const { reason, auctionId, proxyConfig } = payload || {};
+      if (!auctionId) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = proxyConfig?.userId || payload?.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      if (reason) {
         addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
       }
+
+      setProxyConfigs((prev) => {
+        const existing = prev[auctionId] || proxyConfig || {};
+        return {
+          ...prev,
+          [auctionId]: {
+            ...existing,
+            status: 'outbid_stopped',
+            stopReason: reason || existing.stopReason || 'Maximum authorized limit reached or exceeded.'
+          }
+        };
+      });
     };
 
     const handleCommentAdded = (payload) => {
@@ -370,6 +455,7 @@ export const AuctionProvider = ({ children }) => {
     socket.on('AUCTION_RESCHEDULED', handleAuctionApprovedOrRescheduled);
     socket.on('AUCTION_REJECTED', handleAuctionRejected);
     socket.on('AUCTION_CREATED', handleAuctionCreated);
+    socket.on('PROXY_CONFIG_UPDATED', handleProxyConfigUpdated);
     socket.on('PROXY_BID_PLACED', handleProxyBidPlaced);
     socket.on('PROXY_BID_LIMIT_EXCEEDED', handleProxyBidLimitExceeded);
     socket.on('COMMENT_ADDED', handleCommentAdded);
@@ -383,6 +469,7 @@ export const AuctionProvider = ({ children }) => {
       socket.off('AUCTION_RESCHEDULED', handleAuctionApprovedOrRescheduled);
       socket.off('AUCTION_REJECTED', handleAuctionRejected);
       socket.off('AUCTION_CREATED', handleAuctionCreated);
+      socket.off('PROXY_CONFIG_UPDATED', handleProxyConfigUpdated);
       socket.off('PROXY_BID_PLACED', handleProxyBidPlaced);
       socket.off('PROXY_BID_LIMIT_EXCEEDED', handleProxyBidLimitExceeded);
       socket.off('COMMENT_ADDED', handleCommentAdded);
@@ -1357,6 +1444,12 @@ export const AuctionProvider = ({ children }) => {
     try {
       const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/proxy-bid?userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
+      if (data && data.success) {
+        setProxyConfigs((prev) => ({
+          ...prev,
+          [auctionId]: data.config || null
+        }));
+      }
       return data;
     } catch (err) {
       return { success: false, error: err.message };
@@ -1372,6 +1465,12 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.config) {
+          setProxyConfigs((prev) => ({
+            ...prev,
+            [auctionId]: data.config
+          }));
+        }
         addToast(`Auto-bidding activated. Maximum authorized: ${formatINR(maxBid)}.`);
       } else {
         addToast(data.error || 'Failed to enable auto-bidding.', 'error');
@@ -1392,6 +1491,12 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.config) {
+          setProxyConfigs((prev) => ({
+            ...prev,
+            [auctionId]: data.config
+          }));
+        }
         addToast('Auto-bidding disabled for this lot.');
       } else {
         addToast(data.error || 'Failed to disable proxy bidding.', 'error');
@@ -1414,6 +1519,7 @@ export const AuctionProvider = ({ children }) => {
         rescheduleAuctionLot,
         rejectAuctionLot,
         placeBid,
+        proxyConfigs,
         getProxyBidConfig,
         enableProxyBid,
         disableProxyBid,
