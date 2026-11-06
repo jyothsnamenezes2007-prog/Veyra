@@ -1,3 +1,5 @@
+import { hasValidImage } from '../data/products.js';
+
 /**
  * Helper to compute search suggestions from catalog products and categories
  */
@@ -6,6 +8,21 @@ export function getSearchSuggestions(query, products = [], categories = []) {
   if (!trimmed) {
     return { products: [], categories: [], totalProductMatches: 0, hasMatches: false };
   }
+
+  const excessDemoIds = new Set([
+    'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12',
+    'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4',
+    'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'
+  ]);
+
+  const activeProducts = products.filter((p) => {
+    if (!p) return false;
+    if (p.isSold || p.status === 'sold' || p.listingStatus === 'sold' || p.inStock === false) return false;
+    if (p.listingStatus && p.listingStatus !== 'active') return false;
+    if (excessDemoIds.has(p.id)) return false;
+    if (!hasValidImage(p)) return false;
+    return true;
+  });
 
   const words = trimmed.split(/\s+/).filter(Boolean);
 
@@ -33,7 +50,7 @@ export function getSearchSuggestions(query, products = [], categories = []) {
   };
 
   // 1. Strict match: all words match or exact phrase
-  const strictMatches = products.filter((p) => {
+  const strictMatches = activeProducts.filter((p) => {
     const combined = getCombinedText(p);
     if (combined.includes(trimmed)) return true;
     return words.every((w) => matchesWord(combined, w));
@@ -43,7 +60,7 @@ export function getSearchSuggestions(query, products = [], categories = []) {
   let allMatches = [...strictMatches];
   if (allMatches.length < 5 && words.length > 1) {
     const existingIds = new Set(allMatches.map((p) => p.id));
-    const partialMatches = products.filter((p) => {
+    const partialMatches = activeProducts.filter((p) => {
       if (existingIds.has(p.id)) return false;
       const combined = getCombinedText(p);
       return words.some((w) => w.length >= 3 && matchesWord(combined, w));

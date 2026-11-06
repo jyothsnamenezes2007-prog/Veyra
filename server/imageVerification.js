@@ -482,3 +482,23 @@ export function invalidateImageVerification(imageInput) {
 export function clearVerificationRegistry() {
   verifiedImagesRegistry.clear();
 }
+
+/**
+ * Register an image as verified (used for testing without outbound API calls)
+ */
+export function registerVerifiedImageForTesting(imageInput) {
+  try {
+    const imageHash = computeImageHash(imageInput);
+    const token = 'vtok-test-' + Date.now().toString(36);
+    verifiedImagesRegistry.set(imageHash, {
+      token,
+      verified: true,
+      timestamp: Date.now(),
+      reason: 'Verified for testing',
+      confidence: 1.0
+    });
+    return token;
+  } catch (e) {
+    return null;
+  }
+}

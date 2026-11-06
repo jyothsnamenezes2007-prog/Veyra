@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { PRODUCTS, CATEGORIES } from '../data/products';
+import { PRODUCTS, CATEGORIES, hasValidImage, MAX_DEMO_PRODUCTS } from '../data/products';
 import { useToast } from './ToastContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getSocket } from '../lib/socket';
@@ -17,9 +17,16 @@ export const ProductsProvider = ({ children }) => {
       if (!saved) return [];
       const parsed = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
+      const excessDemoIds = new Set([
+        'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12',
+        'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4',
+        'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'
+      ]);
       const seen = new Set();
       return parsed.filter((p) => {
         if (!p || !p.id || seen.has(p.id)) return false;
+        if (excessDemoIds.has(p.id)) return false;
+        if (!hasValidImage(p)) return false;
         seen.add(p.id);
         return true;
       });
@@ -98,7 +105,14 @@ export const ProductsProvider = ({ children }) => {
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products)) {
-          const customFromServer = data.products.filter((p) => p.id && String(p.id).startsWith('prod-'));
+          const excessDemoIds = new Set([
+            'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12',
+            'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4',
+            'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'
+          ]);
+          const customFromServer = data.products.filter(
+            (p) => p.id && String(p.id).startsWith('prod-') && !excessDemoIds.has(p.id) && hasValidImage(p)
+          );
           if (customFromServer.length > 0) {
             setCustomProducts((prev) => {
               const prevIds = new Set(prev.map((p) => p.id));
@@ -109,7 +123,7 @@ export const ProductsProvider = ({ children }) => {
                   merged.unshift(p);
                 }
               });
-              return merged;
+              return merged.filter((p) => !excessDemoIds.has(p.id) && hasValidImage(p));
             });
           }
         }
@@ -159,11 +173,20 @@ export const ProductsProvider = ({ children }) => {
         }
       };
 
+      const handleProductUpdated = (payload) => {
+        if (payload?.product?.id && isMounted) {
+          setCustomProducts((prev) =>
+            prev.map((p) => (p.id === payload.product.id ? { ...p, ...payload.product } : p))
+          );
+        }
+      };
+
       socket.on('connect', handleConnect);
       socket.on('PRODUCT_CREATED', handleProductCreated);
       socket.on('PRODUCT_DELETED', handleProductDeleted);
       socket.on('PRODUCT_APPROVED', handleProductApproved);
       socket.on('PRODUCT_REJECTED', handleProductRejected);
+      socket.on('PRODUCT_UPDATED', handleProductUpdated);
 
       return () => {
         isMounted = false;
@@ -172,6 +195,7 @@ export const ProductsProvider = ({ children }) => {
         socket.off('PRODUCT_DELETED', handleProductDeleted);
         socket.off('PRODUCT_APPROVED', handleProductApproved);
         socket.off('PRODUCT_REJECTED', handleProductRejected);
+        socket.off('PRODUCT_UPDATED', handleProductUpdated);
       };
     }
 
@@ -180,11 +204,33 @@ export const ProductsProvider = ({ children }) => {
     };
   }, [syncProductsWithServer]);
 
-  // Base catalog: Prefer Supabase products if loaded, fallback to PRODUCTS sample catalog
+  // Synchronize sold items dispatched from in-app checkout
+  useEffect(() => {
+    const handleProductSold = (e) => {
+      const productId = e?.detail?.productId;
+      if (productId) {
+        setCustomProducts((prev) =>
+          prev.map((p) =>
+            p.id === productId ? { ...p, inStock: false, isSold: true, listingStatus: 'sold' } : p
+          )
+        );
+      }
+    };
+    window.addEventListener('veyra_product_sold', handleProductSold);
+    return () => window.removeEventListener('veyra_product_sold', handleProductSold);
+  }, []);
+
+  // Base catalog: Prefer Supabase products if loaded, fallback to PRODUCTS sample catalog (maximum 2 demo products)
   const allProducts = useMemo(() => {
-    const baseCatalog = supabaseProducts.length > 0 ? supabaseProducts : PRODUCTS;
+    const excessDemoIds = new Set([
+      'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12',
+      'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4',
+      'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'
+    ]);
+    const rawBase = supabaseProducts.length > 0 ? supabaseProducts : PRODUCTS;
+    const baseCatalog = rawBase.filter((p) => !excessDemoIds.has(p.id) && hasValidImage(p)).slice(0, MAX_DEMO_PRODUCTS);
     const baseIds = new Set(baseCatalog.map((p) => p.id));
-    const uniqueCustom = customProducts.filter((p) => !baseIds.has(p.id));
+    const uniqueCustom = customProducts.filter((p) => !baseIds.has(p.id) && !excessDemoIds.has(p.id) && hasValidImage(p));
     return [...uniqueCustom, ...baseCatalog];
   }, [customProducts, supabaseProducts]);
 
@@ -249,10 +295,20 @@ export const ProductsProvider = ({ children }) => {
       fetch(`/api/products/${productId}/approve`, { method: 'POST' }).catch(() => {});
     } else if (status === 'rejected') {
       fetch(`/api/products/${productId}/reject`, { method: 'POST' }).catch(() => {});
+    } else if (status === 'sold') {
+      fetch(`/api/products/${productId}/sold`, { method: 'POST' }).catch(() => {});
     }
 
     setCustomProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, listingStatus: status } : p))
+      prev.map((p) =>
+        p.id === productId
+          ? {
+              ...p,
+              listingStatus: status,
+              ...(status === 'sold' ? { inStock: false, isSold: true } : {})
+            }
+          : p
+      )
     );
 
     // Also synchronize status with any corresponding auction in customAuctions

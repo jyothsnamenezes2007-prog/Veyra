@@ -339,7 +339,8 @@ export const Sell = () => {
   // Main Form Submission Handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting || isSubmittingRef.current) return;
+    if (isSubmitting) return;
+    if (isSubmittingRef.current) return;
     setFormError('');
 
     // 1. Authentication check
@@ -484,7 +485,7 @@ export const Sell = () => {
           materials: formData.materials.trim(),
           dimensions: formData.dimensions.trim(),
           condition: formData.condition || 'Studio Mint Original',
-          listingStatus: 'pending'
+          listingStatus: 'active'
         };
 
         const createdProduct = await addProduct(productPayload);
@@ -1643,59 +1644,59 @@ export const Sell = () => {
                 </span>
               </div>
             </div>
+          </form>
 
-            {/* Bottom Feedback: Success Confirmation Message directly below Submit Button */}
-            {submittedData && (
-              <div
-                ref={successRef}
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  border: '1.5px solid var(--accent-burgundy)',
-                  borderRadius: 'var(--radius-xs)',
-                  padding: '24px 28px',
-                  marginTop: '24px',
-                  boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
-                }}
-              >
-                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                  <CheckCircle2 size={24} color="var(--accent-burgundy)" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ fontSize: '1.25rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
-                      {submittedData.sellingOption === 'auction'
-                        ? 'Auction lot submitted successfully! Your lot is pending curator approval.'
-                        : 'Product uploaded successfully! Your listing is pending approval.'}
-                    </h3>
-                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
-                      <strong>"{submittedData.product?.name || formData.name}"</strong> has been successfully registered with persistent type{' '}
-                      <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
-                        {submittedData.sellingOption}
-                      </code>{' '}
-                      and queued for curator review with status{' '}
-                      <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
-                      {submittedData.sellingOption === 'auction'
-                        ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
-                        : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
-                    </p>
+          {/* Bottom Feedback: Success Confirmation Message directly below Submit Button */}
+          {submittedData && (
+            <div
+              ref={successRef}
+              style={{
+                backgroundColor: '#FFFFFF',
+                border: '1.5px solid var(--accent-burgundy)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '24px 28px',
+                marginTop: '24px',
+                boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
+              }}
+            >
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                <CheckCircle2 size={24} color="var(--accent-burgundy)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ fontSize: '1.25rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
+                    {submittedData.sellingOption === 'auction'
+                      ? 'Auction lot submitted successfully! Your lot is pending curator approval.'
+                      : 'Product uploaded successfully! Your listing is pending approval.'}
+                  </h3>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                    <strong>"{submittedData.product?.name || formData.name}"</strong> has been successfully registered with persistent type{' '}
+                    <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                      {submittedData.sellingOption}
+                    </code>{' '}
+                    and queued for curator review with status{' '}
+                    <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
+                    {submittedData.sellingOption === 'auction'
+                      ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
+                      : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
+                  </p>
 
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                      <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
-                        <Store size={15} />
-                        <span>View in Seller Dashboard</span>
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={handleResetForm}
-                        className="btn btn-secondary"
-                        style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
-                      >
-                        <span>Submit Another Item</span>
-                      </button>
-                    </div>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
+                      <Store size={15} />
+                      <span>View in Seller Dashboard</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      className="btn btn-secondary"
+                      style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
+                    >
+                      <span>Submit Another Item</span>
+                    </button>
                   </div>
                 </div>
               </div>
-            )}
-          </form>
+            </div>
+          )}
 
           {/* RIGHT COLUMN: Live Visual Preview Card */}
           <div style={{ position: 'sticky', top: '100px' }}>

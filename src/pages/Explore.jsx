@@ -5,9 +5,12 @@ import { ProductCard } from '../components/ProductCard';
 import { SearchBar } from '../components/SearchBar';
 import { ProductQuickViewModal } from '../components/ProductQuickViewModal';
 import { useProducts } from '../context/ProductsContext';
+import { useCart } from '../context/CartContext';
+import { hasValidImage } from '../data/products';
 
 export const Explore = () => {
   const { products, categories } = useProducts();
+  const { orders } = useCart();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Search query from URL or state
@@ -57,9 +60,38 @@ export const Explore = () => {
     setSearchParams({});
   };
 
+  const soldProductIds = useMemo(() => {
+    const ids = new Set();
+    if (Array.isArray(orders)) {
+      orders.forEach((o) => {
+        if (Array.isArray(o.items)) {
+          o.items.forEach((item) => {
+            if (item?.id) ids.add(item.id);
+          });
+        }
+      });
+    }
+    return ids;
+  }, [orders]);
+
   // Filtered and sorted products
   const filteredProducts = useMemo(() => {
-    let result = [...products];
+    let result = products.filter((p) => {
+      // Exclude auctions from general marketplace listings
+      if (p.isAuction || p.type === 'auction') return false;
+      // Listing must be active
+      if (p.listingStatus && p.listingStatus !== 'active') return false;
+      // Sold products must disappear from active marketplace listings
+      if (p.isSold === true || p.status === 'sold' || p.listingStatus === 'sold' || p.inStock === false) return false;
+      if (soldProductIds.has(p.id)) return false;
+      // No image-less products in public marketplace
+      if (!hasValidImage(p)) return false;
+      // Keep no more than 2 demo products
+      if (['prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12', 'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4', 'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'].includes(p.id)) {
+        return false;
+      }
+      return true;
+    });
 
     // Category filter
     if (activeCategory !== 'all') {
@@ -129,7 +161,7 @@ export const Explore = () => {
     }
 
     return result;
-  }, [products, activeCategory, searchTerm, sortBy, priceRange, categories]);
+  }, [products, activeCategory, searchTerm, sortBy, priceRange, categories, soldProductIds]);
 
   return (
     <div style={{ paddingTop: '32px', paddingBottom: '80px', backgroundColor: 'var(--bg-primary)' }}>

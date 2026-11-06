@@ -248,14 +248,14 @@ export async function handleApiRequest(req, res) {
       if (clientSubmissionId) {
         const cached = getCachedSubmission(clientSubmissionId);
         if (cached) {
-          sendJson(res, cached.status, cached.body);
+          sendJson(res, 200, { ...cached.body, duplicate: true, duplicatePrevented: true });
           return true;
         }
 
         // 2. In-flight lock: wait if a concurrent request is already creating this
         if (submissionLocks.has(clientSubmissionId)) {
           const lockedResult = await submissionLocks.get(clientSubmissionId);
-          sendJson(res, lockedResult.status, lockedResult.body);
+          sendJson(res, 200, { ...lockedResult.body, duplicate: true, duplicatePrevented: true });
           return true;
         }
 
@@ -997,21 +997,21 @@ export async function handleApiRequest(req, res) {
       if (clientSubmissionId) {
         const cached = getCachedSubmission(clientSubmissionId);
         if (cached) {
-          sendJson(res, cached.status, cached.body);
+          sendJson(res, 200, { ...cached.body, duplicate: true, duplicatePrevented: true });
           return true;
         }
 
         // 2. In-flight lock: wait if a concurrent request is already creating this
         if (submissionLocks.has(clientSubmissionId)) {
           const lockedResult = await submissionLocks.get(clientSubmissionId);
-          sendJson(res, lockedResult.status, lockedResult.body);
+          sendJson(res, 200, { ...lockedResult.body, duplicate: true, duplicatePrevented: true });
           return true;
         }
 
         // 3. Database check for existing product with this clientSubmissionId
         const existingProduct = getProducts().find((p) => p.clientSubmissionId === clientSubmissionId);
         if (existingProduct) {
-          const responseBody = { success: true, product: existingProduct, duplicate: true };
+          const responseBody = { success: true, product: existingProduct, duplicate: true, duplicatePrevented: true };
           setCachedSubmission(clientSubmissionId, 200, responseBody);
           sendJson(res, 200, responseBody);
           return true;
@@ -1046,7 +1046,7 @@ export async function handleApiRequest(req, res) {
         return false;
       });
       if (rapidProduct) {
-        const responseBody = { success: true, product: rapidProduct, duplicate: true };
+        const responseBody = { success: true, product: rapidProduct, duplicate: true, duplicatePrevented: true };
         if (clientSubmissionId) setCachedSubmission(clientSubmissionId, 200, responseBody);
         sendJson(res, 200, responseBody);
         return true;
@@ -1098,7 +1098,7 @@ export async function handleApiRequest(req, res) {
         rating: 5.0,
         featured: false,
         inStock: true,
-        listingStatus: 'pending',
+        listingStatus: data.listingStatus || 'active',
         listedAt: new Date().toISOString()
       };
 
@@ -1151,10 +1151,37 @@ export async function handleApiRequest(req, res) {
     return true;
   }
 
+  // 13b. POST /api/products/:id/sold
+  const prodSoldMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)\/sold$/);
+  if (prodSoldMatch && method === 'POST') {
+    const id = prodSoldMatch[1];
+    const product = getProductById(id);
+    if (!product) {
+      sendJson(res, 404, { success: false, error: 'Product not found.' });
+      return true;
+    }
+
+    const updated = updateProduct(id, {
+      inStock: false,
+      isSold: true,
+      listingStatus: 'sold'
+    });
+    broadcastSSE('PRODUCT_UPDATED', { product: updated });
+    sendJson(res, 200, { success: true, product: updated });
+    return true;
+  }
+
   // 14. DELETE /api/products/:id or POST /api/products/:id/delete
   const prodDeleteMatch = pathname.match(/^\/api\/products\/([a-zA-Z0-9_-]+)(?:\/delete)?$/);
   if (prodDeleteMatch && (method === 'DELETE' || (method === 'POST' && pathname.endsWith('/delete')))) {
     const id = prodDeleteMatch[1];
+
+    // Protected auctions safety check: real auctions cannot be deleted
+    if (['auc-1', 'auc-2', 'auc-3', 'auc-4', 'up-1', 'up-2', 'up-3', 'up-4'].includes(id)) {
+      sendJson(res, 403, { success: false, error: 'Unauthorized: Production auction lots cannot be deleted.' });
+      return true;
+    }
+
     const product = getProductById(id);
     if (!product) {
       sendJson(res, 404, { success: false, error: 'Product not found.' });
