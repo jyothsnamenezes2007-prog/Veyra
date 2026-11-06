@@ -48,6 +48,32 @@ async function withAuctionLock(auctionId, fn) {
   }
 }
 
+// In-memory idempotency cache & mutex locks for product/auction submissions
+const submissionLocks = new Map(); // key -> Promise<{ status, body }>
+const submissionResponseCache = new Map(); // key -> { status, body, timestamp }
+
+function getCachedSubmission(key) {
+  if (!key) return null;
+  const entry = submissionResponseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > 30 * 60 * 1000) {
+    submissionResponseCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setCachedSubmission(key, status, body) {
+  if (!key) return;
+  submissionResponseCache.set(key, { status, body, timestamp: Date.now() });
+  if (submissionResponseCache.size > 500) {
+    const cutoff = Date.now() - 30 * 60 * 1000;
+    for (const [k, v] of submissionResponseCache.entries()) {
+      if (v.timestamp < cutoff) submissionResponseCache.delete(k);
+    }
+  }
+}
+
 // Broadcast real-time event to all connected Socket.IO clients
 export function broadcastRealtimeEvent(type, payload = {}, auctionId = null) {
   // Isolate private proxy-bidding events exclusively to their authenticated owner
@@ -73,17 +99,24 @@ scheduler.on('event', ({ type, payload }) => {
 });
 
 // Helper to parse JSON body from incoming Node request
-function parseJsonBody(req) {
+function parseJsonBody(req, limit = 5 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let oversized = false;
+
     req.on('data', (chunk) => {
+      if (oversized) return;
       body += chunk;
-      if (body.length > 5 * 1024 * 1024) {
-        // 5MB limit
-        reject(new Error('Request payload too large'));
+      if (body.length > limit) {
+        oversized = true;
+        body = ''; // Free accumulated memory immediately without continuing to accumulate
       }
     });
+
     req.on('end', () => {
+      if (oversized) {
+        return reject(new Error('Request payload too large'));
+      }
       if (!body.trim()) return resolve({});
       try {
         resolve(JSON.parse(body));
@@ -91,6 +124,7 @@ function parseJsonBody(req) {
         reject(new Error('Invalid JSON'));
       }
     });
+
     req.on('error', reject);
   });
 }
@@ -136,7 +170,8 @@ export async function handleApiRequest(req, res) {
   // 2b. POST /api/verify-image (Verify uploaded product image via Groq vision API)
   if (pathname === '/api/verify-image' && method === 'POST') {
     try {
-      const data = await parseJsonBody(req);
+      // 5MB binary image Base64-encoded is ~6.67MB + JSON overhead; 10MB limit accommodates valid 5MB images
+      const data = await parseJsonBody(req, 10 * 1024 * 1024);
       if (!data.image) {
         sendJson(res, 400, {
           success: false,
@@ -203,8 +238,37 @@ export async function handleApiRequest(req, res) {
 
   // 5. POST /api/auctions (Create new live auction lot)
   if (pathname === '/api/auctions' && method === 'POST') {
+    let releaseLock;
+    let clientSubmissionId = null;
     try {
       const data = await parseJsonBody(req);
+      clientSubmissionId = (typeof data.clientSubmissionId === 'string' && data.clientSubmissionId.trim()) || req.headers['x-idempotency-key'] || null;
+
+      // 1. Check idempotency response cache
+      if (clientSubmissionId) {
+        const cached = getCachedSubmission(clientSubmissionId);
+        if (cached) {
+          sendJson(res, cached.status, cached.body);
+          return true;
+        }
+
+        // 2. In-flight lock: wait if a concurrent request is already creating this
+        if (submissionLocks.has(clientSubmissionId)) {
+          const lockedResult = await submissionLocks.get(clientSubmissionId);
+          sendJson(res, lockedResult.status, lockedResult.body);
+          return true;
+        }
+
+        // 3. Database check for existing auction with this clientSubmissionId
+        const existingAuction = getAuctions().find((a) => a.clientSubmissionId === clientSubmissionId);
+        if (existingAuction) {
+          const existingProduct = getProductById(existingAuction.productId) || getProductById(existingAuction.id);
+          const responseBody = { success: true, auction: existingAuction, product: existingProduct, duplicate: true };
+          setCachedSubmission(clientSubmissionId, 200, responseBody);
+          sendJson(res, 200, responseBody);
+          return true;
+        }
+      }
 
       if (!data.name || !data.seller || !data.startingBid) {
         sendJson(res, 400, { success: false, error: 'Title, seller, and starting bid are required.' });
@@ -219,6 +283,34 @@ export async function handleApiRequest(req, res) {
 
       const estimatedValue = Number(data.estimatedValue || data.price || startingBid);
 
+      // Rapid duplicate submission check (same seller, same title, same starting bid, same primary image within 15 seconds)
+      const primaryImage = data.image || (data.images && data.images[0]) || '';
+      const rapidAuction = getAuctions().find((a) => {
+        if (a.sellerId && data.sellerId && a.sellerId === data.sellerId) {
+          const sameName = a.name?.trim().toLowerCase() === data.name.trim().toLowerCase();
+          const sameBid = Number(a.startingBid) === startingBid;
+          const sameImg = a.image === primaryImage || (a.images && a.images[0] === primaryImage);
+          const aTime = a.submittedAt || a.listedAt ? new Date(a.submittedAt || a.listedAt).getTime() : 0;
+          if (sameName && sameBid && sameImg && Math.abs(Date.now() - aTime) < 15000) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (rapidAuction) {
+        const existingProduct = getProductById(rapidAuction.productId) || getProductById(rapidAuction.id);
+        const responseBody = { success: true, auction: rapidAuction, product: existingProduct, duplicate: true };
+        if (clientSubmissionId) setCachedSubmission(clientSubmissionId, 200, responseBody);
+        sendJson(res, 200, responseBody);
+        return true;
+      }
+
+      // Establish in-flight lock for this submission ID
+      if (clientSubmissionId) {
+        const lockPromise = new Promise((resolve) => { releaseLock = resolve; });
+        submissionLocks.set(clientSubmissionId, lockPromise);
+      }
+
       // Parse start and end timestamps
       let startTimestamp = data.startTimestamp;
       let endTimestamp = data.endTimestamp;
@@ -229,6 +321,8 @@ export async function handleApiRequest(req, res) {
 
       if (!startTimestamp || isNaN(startTimestamp)) {
         sendJson(res, 400, { success: false, error: 'Valid auction start date and time are required.' });
+        if (releaseLock) releaseLock({ status: 400, body: { success: false, error: 'Valid auction start date and time are required.' } });
+        if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
         return true;
       }
 
@@ -236,6 +330,8 @@ export async function handleApiRequest(req, res) {
       const now = Date.now();
       if (startTimestamp < now - 15000) {
         sendJson(res, 400, { success: false, error: 'Auction start time must be scheduled in the future.' });
+        if (releaseLock) releaseLock({ status: 400, body: { success: false, error: 'Auction start time must be scheduled in the future.' } });
+        if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
         return true;
       }
 
@@ -251,11 +347,15 @@ export async function handleApiRequest(req, res) {
 
       if (!endTimestamp || isNaN(endTimestamp)) {
         sendJson(res, 400, { success: false, error: 'Valid auction end date and time or duration are required.' });
+        if (releaseLock) releaseLock({ status: 400, body: { success: false, error: 'Valid auction end date and time or duration are required.' } });
+        if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
         return true;
       }
 
       if (endTimestamp <= startTimestamp) {
         sendJson(res, 400, { success: false, error: 'Auction end time must be after start time.' });
+        if (releaseLock) releaseLock({ status: 400, body: { success: false, error: 'Auction end time must be after start time.' } });
+        if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
         return true;
       }
 
@@ -266,10 +366,11 @@ export async function handleApiRequest(req, res) {
       const reservePrice = data.reservePrice ? Number(data.reservePrice) : null;
       if (reservePrice !== null && (isNaN(reservePrice) || reservePrice < startingBid)) {
         sendJson(res, 400, { success: false, error: 'Reserve price must be greater than or equal to starting bid.' });
+        if (releaseLock) releaseLock({ status: 400, body: { success: false, error: 'Reserve price must be greater than or equal to starting bid.' } });
+        if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
         return true;
       }
 
-      const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
 
       // Authoritative image verification check: If an image is provided, it must be verified
@@ -278,10 +379,13 @@ export async function handleApiRequest(req, res) {
         if (!authorized) {
           const verifyRes = await verifyProductImage(primaryImage);
           if (!verifyRes.verified) {
-            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+            const errPayload = {
               success: false,
               error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
-            });
+            };
+            sendJson(res, verifyRes.unavailable ? 503 : 400, errPayload);
+            if (releaseLock) releaseLock({ status: verifyRes.unavailable ? 503 : 400, body: errPayload });
+            if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
             return true;
           }
           authorized = true;
@@ -294,6 +398,7 @@ export async function handleApiRequest(req, res) {
       const newAuction = {
         id: lotId,
         productId: prodId,
+        clientSubmissionId: clientSubmissionId,
         type: 'auction',
         isAuction: true,
         name: data.name.trim(),
@@ -333,6 +438,7 @@ export async function handleApiRequest(req, res) {
       const newProduct = {
         id: prodId,
         auctionId: lotId,
+        clientSubmissionId: clientSubmissionId,
         type: 'auction',
         isAuction: true,
         name: newAuction.name,
@@ -359,9 +465,15 @@ export async function handleApiRequest(req, res) {
       insertProduct(newProduct);
 
       broadcastSSE('AUCTION_CREATED', { auction: newAuction, product: newProduct });
-      sendJson(res, 201, { success: true, auction: newAuction, product: newProduct });
+      const responsePayload = { success: true, auction: newAuction, product: newProduct };
+      if (clientSubmissionId) setCachedSubmission(clientSubmissionId, 201, responsePayload);
+      sendJson(res, 201, responsePayload);
+      if (releaseLock) releaseLock({ status: 201, body: responsePayload });
+      if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
       return true;
     } catch (err) {
+      if (releaseLock) releaseLock({ status: 500, body: { success: false, error: err.message } });
+      if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
       sendJson(res, 500, { success: false, error: err.message });
       return true;
     }
@@ -875,8 +987,36 @@ export async function handleApiRequest(req, res) {
 
   // 11. POST /api/products (Create normal shop product)
   if (pathname === '/api/products' && method === 'POST') {
+    let releaseLock;
+    let clientSubmissionId = null;
     try {
       const data = await parseJsonBody(req);
+      clientSubmissionId = (typeof data.clientSubmissionId === 'string' && data.clientSubmissionId.trim()) || req.headers['x-idempotency-key'] || null;
+
+      // 1. Check idempotency response cache
+      if (clientSubmissionId) {
+        const cached = getCachedSubmission(clientSubmissionId);
+        if (cached) {
+          sendJson(res, cached.status, cached.body);
+          return true;
+        }
+
+        // 2. In-flight lock: wait if a concurrent request is already creating this
+        if (submissionLocks.has(clientSubmissionId)) {
+          const lockedResult = await submissionLocks.get(clientSubmissionId);
+          sendJson(res, lockedResult.status, lockedResult.body);
+          return true;
+        }
+
+        // 3. Database check for existing product with this clientSubmissionId
+        const existingProduct = getProducts().find((p) => p.clientSubmissionId === clientSubmissionId);
+        if (existingProduct) {
+          const responseBody = { success: true, product: existingProduct, duplicate: true };
+          setCachedSubmission(clientSubmissionId, 200, responseBody);
+          sendJson(res, 200, responseBody);
+          return true;
+        }
+      }
 
       if (!data.name || !data.seller || !data.price) {
         sendJson(res, 400, { success: false, error: 'Product name, seller, and price are required.' });
@@ -892,16 +1032,45 @@ export async function handleApiRequest(req, res) {
       const primaryImage = data.image || (data.images && data.images[0]) || '';
       const imagesList = Array.isArray(data.images) && data.images.length > 0 ? data.images : [primaryImage];
 
+      // Rapid duplicate submission check (same seller, same title, same price, same image within 15 seconds)
+      const rapidProduct = getProducts().find((p) => {
+        if (p.sellerId && data.sellerId && p.sellerId === data.sellerId) {
+          const sameName = p.name?.trim().toLowerCase() === data.name.trim().toLowerCase();
+          const samePrice = Number(p.price) === price;
+          const sameImg = p.image === primaryImage || (p.images && p.images[0] === primaryImage);
+          const pTime = p.listedAt || p.submittedAt ? new Date(p.listedAt || p.submittedAt).getTime() : 0;
+          if (sameName && samePrice && sameImg && Math.abs(Date.now() - pTime) < 15000) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (rapidProduct) {
+        const responseBody = { success: true, product: rapidProduct, duplicate: true };
+        if (clientSubmissionId) setCachedSubmission(clientSubmissionId, 200, responseBody);
+        sendJson(res, 200, responseBody);
+        return true;
+      }
+
+      // Establish in-flight lock for this submission ID
+      if (clientSubmissionId) {
+        const lockPromise = new Promise((resolve) => { releaseLock = resolve; });
+        submissionLocks.set(clientSubmissionId, lockPromise);
+      }
+
       // Authoritative image verification check: If an image is provided, it must be verified
       if (primaryImage) {
         let authorized = isImageAuthorized(primaryImage, data.verificationToken);
         if (!authorized) {
           const verifyRes = await verifyProductImage(primaryImage);
           if (!verifyRes.verified) {
-            sendJson(res, verifyRes.unavailable ? 503 : 400, {
+            const errPayload = {
               success: false,
               error: verifyRes.error || 'Product image verification required. The uploaded image must pass verification before listing submission.'
-            });
+            };
+            sendJson(res, verifyRes.unavailable ? 503 : 400, errPayload);
+            if (releaseLock) releaseLock({ status: verifyRes.unavailable ? 503 : 400, body: errPayload });
+            if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
             return true;
           }
           authorized = true;
@@ -910,6 +1079,7 @@ export async function handleApiRequest(req, res) {
 
       const newProduct = {
         id: data.id || ('prod-custom-' + Date.now()),
+        clientSubmissionId: clientSubmissionId,
         type: 'shop',
         isAuction: false,
         name: data.name.trim(),
@@ -935,9 +1105,15 @@ export async function handleApiRequest(req, res) {
       insertProduct(newProduct);
 
       broadcastSSE('PRODUCT_CREATED', { product: newProduct });
-      sendJson(res, 201, { success: true, product: newProduct });
+      const responsePayload = { success: true, product: newProduct };
+      if (clientSubmissionId) setCachedSubmission(clientSubmissionId, 201, responsePayload);
+      sendJson(res, 201, responsePayload);
+      if (releaseLock) releaseLock({ status: 201, body: responsePayload });
+      if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
       return true;
     } catch (err) {
+      if (releaseLock) releaseLock({ status: 500, body: { success: false, error: err.message } });
+      if (clientSubmissionId) submissionLocks.delete(clientSubmissionId);
       sendJson(res, 500, { success: false, error: err.message });
       return true;
     }

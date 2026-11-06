@@ -14,7 +14,15 @@ export const ProductsProvider = ({ children }) => {
   const [customProducts, setCustomProducts] = useState(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_PRODUCTS_KEY);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      const seen = new Set();
+      return parsed.filter((p) => {
+        if (!p || !p.id || seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      });
     } catch (e) {
       return [];
     }
@@ -97,6 +105,7 @@ export const ProductsProvider = ({ children }) => {
               const merged = [...prev];
               customFromServer.forEach((p) => {
                 if (!prevIds.has(p.id)) {
+                  prevIds.add(p.id);
                   merged.unshift(p);
                 }
               });

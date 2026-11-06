@@ -74,7 +74,15 @@ export const AuctionProvider = ({ children }) => {
   const [customAuctions, setCustomAuctions] = useState(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_AUCTIONS_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      const seen = new Set();
+      return parsed.filter((a) => {
+        if (!a || !a.id || seen.has(a.id)) return false;
+        seen.add(a.id);
+        return true;
+      });
     } catch (e) {
       console.warn('Failed to parse custom auctions', e);
       return [];

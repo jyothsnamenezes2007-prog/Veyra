@@ -121,6 +121,7 @@ export const Sell = () => {
   const [imageError, setImageError] = useState('');
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [submittedData, setSubmittedData] = useState(null);
   const submissionTokenRef = useRef('sub_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   const successRef = useRef(null);
@@ -141,6 +142,12 @@ export const Sell = () => {
   // Handle generic form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    // Prevent negative numbers on monetary fields while allowing empty string for manual typing
+    if (['price', 'startingBid', 'minIncrement', 'reservePrice'].includes(name)) {
+      if (value !== '' && Number(value) < 0) {
+        return;
+      }
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (formError) setFormError('');
   };
@@ -332,7 +339,7 @@ export const Sell = () => {
   // Main Form Submission Handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    if (isSubmitting || isSubmittingRef.current) return;
     setFormError('');
 
     // 1. Authentication check
@@ -454,6 +461,7 @@ export const Sell = () => {
       }
     }
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -537,6 +545,7 @@ export const Sell = () => {
       console.error('Submission error:', err);
       setFormError(err.message || 'An error occurred while saving your listing. Please try again.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -748,6 +757,7 @@ export const Sell = () => {
           {/* LEFT COLUMN: Listing Form */}
           <form
             onSubmit={handleSubmit}
+            noValidate
             style={{
               backgroundColor: '#FFFFFF',
               border: '1px solid var(--border-color)',
@@ -852,8 +862,8 @@ export const Sell = () => {
                     id="price"
                     name="price"
                     type="number"
-                    min="100"
-                    step="100"
+                    min="0"
+                    step="500"
                     className="form-input"
                     value={formData.price}
                     onChange={handleInputChange}
@@ -897,7 +907,7 @@ export const Sell = () => {
                       id="startingBid"
                       name="startingBid"
                       type="number"
-                      min="100"
+                      min="0"
                       step="500"
                       className="form-input"
                       value={formData.startingBid}
@@ -918,8 +928,8 @@ export const Sell = () => {
                       id="minIncrement"
                       name="minIncrement"
                       type="number"
-                      min="100"
-                      step="100"
+                      min="0"
+                      step="500"
                       className="form-input"
                       value={formData.minIncrement}
                       onChange={handleInputChange}
@@ -941,7 +951,7 @@ export const Sell = () => {
                     id="reservePrice"
                     name="reservePrice"
                     type="number"
-                    min="100"
+                    min="0"
                     step="500"
                     className="form-input"
                     value={formData.reservePrice}
@@ -1633,59 +1643,59 @@ export const Sell = () => {
                 </span>
               </div>
             </div>
-          </form>
 
-          {/* Success Confirmation Card (rendered below the form upon successful backend persistence) */}
-          {submittedData && (
-            <div
-              ref={successRef}
-              style={{
-                backgroundColor: '#FFFFFF',
-                border: '1.5px solid var(--accent-burgundy)',
-                borderRadius: 'var(--radius-xs)',
-                padding: '28px 32px',
-                marginTop: '28px',
-                boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
-              }}
-            >
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                <CheckCircle2 size={28} color="var(--success-color)" style={{ flexShrink: 0, marginTop: '2px' }} />
-                <div style={{ flex: 1 }}>
-                  <h3 style={{ fontSize: '1.4rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
-                    {submittedData.sellingOption === 'auction'
-                      ? 'Live Auction Lot Submitted for Approval!'
-                      : 'Shop Product Submitted for Approval!'}
-                  </h3>
-                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 18px 0' }}>
-                    <strong>"{submittedData.product.name}"</strong> has been successfully registered with persistent type{' '}
-                    <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
-                      {submittedData.sellingOption}
-                    </code>{' '}
-                    and queued for curator review with status{' '}
-                    <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
-                    {submittedData.sellingOption === 'auction'
-                      ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
-                      : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
-                  </p>
+            {/* Bottom Feedback: Success Confirmation Message directly below Submit Button */}
+            {submittedData && (
+              <div
+                ref={successRef}
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  border: '1.5px solid var(--accent-burgundy)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '24px 28px',
+                  marginTop: '24px',
+                  boxShadow: '0 4px 16px rgba(120, 59, 75, 0.08)'
+                }}
+              >
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                  <CheckCircle2 size={24} color="var(--accent-burgundy)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ fontSize: '1.25rem', fontFamily: 'var(--font-serif)', margin: '0 0 6px 0', color: 'var(--text-primary)' }}>
+                      {submittedData.sellingOption === 'auction'
+                        ? 'Auction lot submitted successfully! Your lot is pending curator approval.'
+                        : 'Product uploaded successfully! Your listing is pending approval.'}
+                    </h3>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 16px 0' }}>
+                      <strong>"{submittedData.product?.name || formData.name}"</strong> has been successfully registered with persistent type{' '}
+                      <code style={{ backgroundColor: 'var(--surface-secondary)', padding: '2px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                        {submittedData.sellingOption}
+                      </code>{' '}
+                      and queued for curator review with status{' '}
+                      <span style={{ fontWeight: 600, color: 'var(--accent-burgundy)' }}>Pending Approval</span>.{' '}
+                      {submittedData.sellingOption === 'auction'
+                        ? 'Once approved, it will be published to the upcoming auction schedule and automatically transition to live at the scheduled start time.'
+                        : 'Once approved, it will be published immediately to the marketplace catalog for purchase.'}
+                    </p>
 
-                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                    <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
-                      <Store size={15} />
-                      <span>View in Seller Dashboard</span>
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={handleResetForm}
-                      className="btn btn-secondary"
-                      style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
-                    >
-                      <span>Submit Another Item</span>
-                    </button>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <Link to="/my-products" className="btn btn-burgundy" style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}>
+                        <Store size={15} />
+                        <span>View in Seller Dashboard</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={handleResetForm}
+                        className="btn btn-secondary"
+                        style={{ height: '40px', padding: '0 20px', fontSize: '12.5px' }}
+                      >
+                        <span>Submit Another Item</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </form>
 
           {/* RIGHT COLUMN: Live Visual Preview Card */}
           <div style={{ position: 'sticky', top: '100px' }}>
@@ -1828,6 +1838,14 @@ export const Sell = () => {
                           {formatINR(formData.price || 0)}
                         </span>
                       </div>
+                      {formData.reservePrice && Number(formData.reservePrice) > 0 ? (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: '4px' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Reserve Price</span>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            {formatINR(formData.reservePrice)}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>

@@ -1,6 +1,9 @@
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { Readable } from 'node:stream';
-import { initDatabase, getProductById, getAuctionById } from './server/db.js';
+import { initDatabase, resetDbCache, getProductById, getAuctionById } from './server/db.js';
 import { handleApiRequest } from './server/api.js';
 import {
   verifyProductImage,
@@ -107,7 +110,13 @@ async function runTests() {
   const originalEnvUrl = process.env.GROQ_API_BASE_URL;
   const originalEnvModel = process.env.GROQ_VISION_MODEL;
 
+  const originalDbPath = path.resolve('server/data/db.json');
+  const tempDbPath = path.join(os.tmpdir(), `veyra-image-test-db-${Date.now()}.json`);
+  fs.copyFileSync(originalDbPath, tempDbPath);
+  process.env.VEYRA_DB_PATH = tempDbPath;
+
   try {
+    resetDbCache();
     initDatabase();
     clearVerificationRegistry();
 
@@ -391,6 +400,9 @@ async function runTests() {
     else delete process.env.GROQ_API_BASE_URL;
     if (originalEnvModel !== undefined) process.env.GROQ_VISION_MODEL = originalEnvModel;
     else delete process.env.GROQ_VISION_MODEL;
+    if (tempDbPath && fs.existsSync(tempDbPath)) {
+      try { fs.unlinkSync(tempDbPath); } catch (e) {}
+    }
   }
 }
 
