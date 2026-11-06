@@ -7,7 +7,10 @@ import { INITIAL_LIVE_AUCTIONS, UPCOMING_AUCTIONS } from '../src/data/auctions.j
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
+
+export function getDbPath() {
+  return process.env.VEYRA_DB_PATH || path.join(DATA_DIR, 'db.json');
+}
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -17,12 +20,17 @@ if (!fs.existsSync(DATA_DIR)) {
 let dbCache = null;
 let saveQueue = Promise.resolve();
 
+export function resetDbCache() {
+  dbCache = null;
+}
+
 export function initDatabase() {
   if (dbCache) return dbCache;
 
-  if (fs.existsSync(DB_PATH)) {
+  const currentDbPath = getDbPath();
+  if (fs.existsSync(currentDbPath)) {
     try {
-      const raw = fs.readFileSync(DB_PATH, 'utf8');
+      const raw = fs.readFileSync(currentDbPath, 'utf8');
       dbCache = JSON.parse(raw);
       if (!Array.isArray(dbCache.proxyConfigs)) {
         dbCache.proxyConfigs = [];
@@ -142,22 +150,24 @@ export function initDatabase() {
 }
 
 function persistDatabaseSync() {
-  const tmpPath = `${DB_PATH}.tmp`;
+  const currentDbPath = getDbPath();
+  const tmpPath = `${currentDbPath}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(dbCache, null, 2), 'utf8');
-  fs.renameSync(tmpPath, DB_PATH);
+  fs.renameSync(tmpPath, currentDbPath);
 }
 
 export function saveDatabase() {
   saveQueue = saveQueue.then(async () => {
     try {
       const json = JSON.stringify(dbCache, null, 2);
+      const currentDbPath = getDbPath();
       try {
-        const tmpPath = `${DB_PATH}.tmp`;
+        const tmpPath = `${currentDbPath}.tmp`;
         await fs.promises.writeFile(tmpPath, json, 'utf8');
-        await fs.promises.rename(tmpPath, DB_PATH);
+        await fs.promises.rename(tmpPath, currentDbPath);
       } catch (renameErr) {
         // Fallback for Windows file-locking EPERM
-        await fs.promises.writeFile(DB_PATH, json, 'utf8');
+        await fs.promises.writeFile(currentDbPath, json, 'utf8');
       }
     } catch (err) {
       console.error('[Veyra DB] Error persisting database to disk:', err);

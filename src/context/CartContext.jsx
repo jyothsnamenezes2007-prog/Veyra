@@ -29,7 +29,7 @@ export const CartProvider = ({ children }) => {
           date: '14 Oct 2026',
           items: [
             {
-              id: 'prod-1',
+              id: 'prod-sample-order-archived',
               name: 'Ochre Raku Fluted Vessel',
               price: 18500,
               quantity: 1,
@@ -135,6 +135,14 @@ export const CartProvider = ({ children }) => {
 
     setOrders((prev) => [newOrder, ...prev]);
     clearCart();
+    if (orderData?.items && Array.isArray(orderData.items)) {
+      orderData.items.forEach((item) => {
+        if (item?.id) {
+          fetch(`/api/products/${item.id}/sold`, { method: 'POST' }).catch(() => {});
+          window.dispatchEvent(new CustomEvent('veyra_product_sold', { detail: { productId: item.id } }));
+        }
+      });
+    }
     return newOrder;
   };
 

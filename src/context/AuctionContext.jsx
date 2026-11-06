@@ -9,6 +9,8 @@ import {
   getMeetingAccess
 } from '../data/auctions';
 import { useToast } from './ToastContext';
+import { useAuth } from './AuthContext';
+import { getSocket } from '../lib/socket';
 
 const AuctionContext = createContext(null);
 const AUCTIONS_STORAGE_KEY = 'veyra_live_auctions_data';
@@ -20,6 +22,14 @@ const AUCTION_COMMENTS_KEY = 'veyra_auction_comments';
 
 export const AuctionProvider = ({ children }) => {
   const { addToast } = useToast();
+
+  let authUser = null;
+  try {
+    const auth = useAuth();
+    authUser = auth?.user || null;
+  } catch (e) {
+    authUser = null;
+  }
 
   // 1. Base Demo / Live Auctions state
   const [liveAuctions, setLiveAuctions] = useState(() => {
@@ -73,7 +83,15 @@ export const AuctionProvider = ({ children }) => {
   const [customAuctions, setCustomAuctions] = useState(() => {
     try {
       const saved = localStorage.getItem(CUSTOM_AUCTIONS_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      const seen = new Set();
+      return parsed.filter((a) => {
+        if (!a || !a.id || seen.has(a.id)) return false;
+        seen.add(a.id);
+        return true;
+      });
     } catch (e) {
       console.warn('Failed to parse custom auctions', e);
       return [];
@@ -139,6 +157,21 @@ export const AuctionProvider = ({ children }) => {
       return {};
     }
   });
+
+  // 8. Reactive proxy-bidding configurations for authenticated buyer
+  const [proxyConfigs, setProxyConfigs] = useState({});
+  const currentUserId = authUser?.id || null;
+  const prevUserIdRef = useRef(currentUserId);
+  const userRef = useRef(authUser);
+
+  // Clear proxy configurations whenever authenticated user ID changes (including Buyer A -> Buyer B switch)
+  useEffect(() => {
+    userRef.current = authUser;
+    if (prevUserIdRef.current !== currentUserId) {
+      setProxyConfigs({});
+      prevUserIdRef.current = currentUserId;
+    }
+  }, [currentUserId, authUser]);
 
   // Storage persistence effects
   useEffect(() => {
@@ -249,104 +282,199 @@ export const AuctionProvider = ({ children }) => {
     remindersRef.current = reminders;
   }, [reminders]);
 
-  // Real-time server push events via EventSource (SSE)
+  // Real-time server push events via Socket.IO
   useEffect(() => {
-    let es = null;
-    let reconnectTimeout = null;
+    const socket = getSocket();
+    if (!socket) return;
 
-    const connectSSE = () => {
-      try {
-        es = new EventSource('/api/events');
-
-        es.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            const { type, payload } = data;
-
-            if (type === 'AUCTION_STARTED') {
-              const { auction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
-              );
-
-              // Notify if reminder set
-              if (remindersRef.current.includes(auction.id)) {
-                addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
-              }
-            } else if (type === 'AUCTION_ENDED') {
-              const { auction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
-              );
-              addToast(`Auction concluded for "${auction.name}".`);
-            } else if (type === 'BID_PLACED') {
-              const { auctionId, updatedAuction } = payload;
-              setLiveAuctions((prev) =>
-                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-              );
-              setCustomAuctions((prev) =>
-                prev.map((a) => (a.id === auctionId ? updatedAuction : a))
-              );
-            } else if (type === 'AUCTION_APPROVED' || type === 'AUCTION_RESCHEDULED') {
-              const { auction } = payload;
-              setCustomAuctions((prev) => {
-                const exists = prev.some((a) => a.id === auction.id);
-                return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
-              });
-            } else if (type === 'AUCTION_CREATED') {
-              const { auction } = payload;
-              setCustomAuctions((prev) => {
-                const exists = prev.some((a) => a.id === auction.id);
-                return exists ? prev : [auction, ...prev];
-              });
-            } else if (type === 'PROXY_BID_PLACED') {
-              const { bid, auctionId } = payload;
-              addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
-            } else if (type === 'PROXY_BID_LIMIT_EXCEEDED') {
-              const { reason, auctionId } = payload;
-              addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
-            } else if (type === 'COMMENT_ADDED') {
-              const { auctionId, comment } = payload || {};
-              if (auctionId && comment && comment.id) {
-                setComments((prev) => {
-                  const list = prev[auctionId] || [];
-                  if (list.some((c) => c.id === comment.id)) {
-                    return prev;
-                  }
-                  return {
-                    ...prev,
-                    [auctionId]: [...list, comment]
-                  };
-                });
-              }
-            }
-          } catch (err) {}
-        };
-
-        es.onerror = () => {
-          if (es) {
-            es.close();
-            es = null;
-          }
-          // Try to reconnect in 5 seconds
-          reconnectTimeout = setTimeout(connectSSE, 5000);
-        };
-      } catch (err) {}
+    const handleConnect = () => {
+      syncWithServer();
     };
 
-    connectSSE();
+    const handleAuctionStarted = (payload) => {
+      const { auction } = payload || {};
+      if (!auction) return;
+      setLiveAuctions((prev) =>
+        prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+      );
+      setCustomAuctions((prev) =>
+        prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'active' } : a))
+      );
+
+      // Notify if reminder set
+      if (remindersRef.current.includes(auction.id)) {
+        addToast(`🔔 Live Now: "${auction.name}" has opened for competitive bidding!`);
+      }
+    };
+
+    const handleAuctionEnded = (payload) => {
+      const { auction } = payload || {};
+      if (!auction) return;
+      setLiveAuctions((prev) =>
+        prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+      );
+      setCustomAuctions((prev) =>
+        prev.map((a) => (a.id === auction.id ? { ...a, ...auction, status: 'ended' } : a))
+      );
+      addToast(`Auction concluded for "${auction.name}".`);
+    };
+
+    const handleBidPlaced = (payload) => {
+      const { auctionId, updatedAuction } = payload || {};
+      if (!auctionId || !updatedAuction) return;
+      setLiveAuctions((prev) =>
+        prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+      );
+      setCustomAuctions((prev) =>
+        prev.map((a) => (a.id === auctionId ? updatedAuction : a))
+      );
+    };
+
+    const handleAuctionApprovedOrRescheduled = (payload) => {
+      const { auction } = payload || {};
+      if (!auction) return;
+      setCustomAuctions((prev) => {
+        const exists = prev.some((a) => a.id === auction.id);
+        return exists ? prev.map((a) => (a.id === auction.id ? auction : a)) : [auction, ...prev];
+      });
+    };
+
+    const handleAuctionRejected = (payload) => {
+      const { auction } = payload || {};
+      if (!auction) return;
+      setCustomAuctions((prev) =>
+        prev.map((a) => (a.id === auction.id ? { ...a, ...auction, approvalStatus: 'rejected' } : a))
+      );
+    };
+
+    const handleAuctionCreated = (payload) => {
+      const { auction } = payload || {};
+      if (!auction) return;
+      setCustomAuctions((prev) => {
+        const exists = prev.some((a) => a.id === auction.id);
+        return exists ? prev : [auction, ...prev];
+      });
+    };
+
+    const handleProxyConfigUpdated = (payload) => {
+      const { auctionId, config } = payload || {};
+      if (!auctionId || !config) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = config.userId || payload.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      setProxyConfigs((prev) => ({
+        ...prev,
+        [auctionId]: {
+          ...(prev[auctionId] || {}),
+          ...config
+        }
+      }));
+    };
+
+    const handleProxyBidPlaced = (payload) => {
+      const { bid, auctionId, proxyConfig } = payload || {};
+      if (!auctionId) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = proxyConfig?.userId || bid?.bidderId || payload?.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      if (bid?.amount) {
+        addToast(`🤖 Auto-bid of ${formatINR(bid.amount)} placed for lot #${auctionId.toUpperCase()}.`);
+      }
+
+      setProxyConfigs((prev) => {
+        const existing = prev[auctionId] || proxyConfig || {};
+        return {
+          ...prev,
+          [auctionId]: {
+            ...existing,
+            ...(proxyConfig || {}),
+            lastBidAmount: bid?.amount || existing.lastBidAmount,
+            lastBidTime: bid?.timestamp || Date.now(),
+            status: existing.status || 'active'
+          }
+        };
+      });
+    };
+
+    const handleProxyBidLimitExceeded = (payload) => {
+      const { reason, auctionId, proxyConfig } = payload || {};
+      if (!auctionId) return;
+
+      // Ensure event applies only to the authenticated buyer session
+      const targetUserId = proxyConfig?.userId || payload?.userId;
+      if (targetUserId && userRef.current?.id && targetUserId !== userRef.current.id) {
+        return;
+      }
+
+      if (reason) {
+        addToast(`⚠️ Auto-bidding Alert (Lot #${auctionId.toUpperCase()}): ${reason}`, 'warning');
+      }
+
+      setProxyConfigs((prev) => {
+        const existing = prev[auctionId] || proxyConfig || {};
+        return {
+          ...prev,
+          [auctionId]: {
+            ...existing,
+            status: 'outbid_stopped',
+            stopReason: reason || existing.stopReason || 'Maximum authorized limit reached or exceeded.'
+          }
+        };
+      });
+    };
+
+    const handleCommentAdded = (payload) => {
+      const { auctionId, comment } = payload || {};
+      if (auctionId && comment && comment.id) {
+        setComments((prev) => {
+          const list = prev[auctionId] || [];
+          if (list.some((c) => c.id === comment.id)) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [auctionId]: [...list, comment]
+          };
+        });
+      }
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('AUCTION_STARTED', handleAuctionStarted);
+    socket.on('AUCTION_ENDED', handleAuctionEnded);
+    socket.on('BID_PLACED', handleBidPlaced);
+    socket.on('AUCTION_APPROVED', handleAuctionApprovedOrRescheduled);
+    socket.on('AUCTION_RESCHEDULED', handleAuctionApprovedOrRescheduled);
+    socket.on('AUCTION_REJECTED', handleAuctionRejected);
+    socket.on('AUCTION_CREATED', handleAuctionCreated);
+    socket.on('PROXY_CONFIG_UPDATED', handleProxyConfigUpdated);
+    socket.on('PROXY_BID_PLACED', handleProxyBidPlaced);
+    socket.on('PROXY_BID_LIMIT_EXCEEDED', handleProxyBidLimitExceeded);
+    socket.on('COMMENT_ADDED', handleCommentAdded);
 
     return () => {
-      if (es) es.close();
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      socket.off('connect', handleConnect);
+      socket.off('AUCTION_STARTED', handleAuctionStarted);
+      socket.off('AUCTION_ENDED', handleAuctionEnded);
+      socket.off('BID_PLACED', handleBidPlaced);
+      socket.off('AUCTION_APPROVED', handleAuctionApprovedOrRescheduled);
+      socket.off('AUCTION_RESCHEDULED', handleAuctionApprovedOrRescheduled);
+      socket.off('AUCTION_REJECTED', handleAuctionRejected);
+      socket.off('AUCTION_CREATED', handleAuctionCreated);
+      socket.off('PROXY_CONFIG_UPDATED', handleProxyConfigUpdated);
+      socket.off('PROXY_BID_PLACED', handleProxyBidPlaced);
+      socket.off('PROXY_BID_LIMIT_EXCEEDED', handleProxyBidLimitExceeded);
+      socket.off('COMMENT_ADDED', handleCommentAdded);
     };
-  }, [addToast]);
+  }, [addToast, syncWithServer]);
 
   // Cross-tab broadcast listener for multi-tab synchronization
   useEffect(() => {
@@ -1316,6 +1444,12 @@ export const AuctionProvider = ({ children }) => {
     try {
       const res = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/proxy-bid?userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
+      if (data && data.success) {
+        setProxyConfigs((prev) => ({
+          ...prev,
+          [auctionId]: data.config || null
+        }));
+      }
       return data;
     } catch (err) {
       return { success: false, error: err.message };
@@ -1331,6 +1465,12 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.config) {
+          setProxyConfigs((prev) => ({
+            ...prev,
+            [auctionId]: data.config
+          }));
+        }
         addToast(`Auto-bidding activated. Maximum authorized: ${formatINR(maxBid)}.`);
       } else {
         addToast(data.error || 'Failed to enable auto-bidding.', 'error');
@@ -1351,6 +1491,12 @@ export const AuctionProvider = ({ children }) => {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.config) {
+          setProxyConfigs((prev) => ({
+            ...prev,
+            [auctionId]: data.config
+          }));
+        }
         addToast('Auto-bidding disabled for this lot.');
       } else {
         addToast(data.error || 'Failed to disable proxy bidding.', 'error');
@@ -1373,6 +1519,7 @@ export const AuctionProvider = ({ children }) => {
         rescheduleAuctionLot,
         rejectAuctionLot,
         placeBid,
+        proxyConfigs,
         getProxyBidConfig,
         enableProxyBid,
         disableProxyBid,

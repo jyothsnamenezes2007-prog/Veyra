@@ -134,27 +134,37 @@ function buildVerificationPrompt(metadata = {}) {
   const { title, description, category } = metadata;
   let contextInfo = '';
   if (title || description || category) {
-    contextInfo = `\nDeclared product details for cross-check:\n` +
+    contextInfo = `\nDeclared listing details for reference:\n` +
       (title ? `- Title: ${title}\n` : '') +
       (category ? `- Category: ${category}\n` : '') +
       (description ? `- Description: ${description}\n` : '');
   }
 
-  return `You are an expert product image verification engine for Veyra, an artisan and collectible marketplace.
-Analyze the provided product photograph to evaluate whether it is suitable for a genuine product listing.${contextInfo}
+  return `You are a practical, user-friendly product image verification engine for Veyra, an artisan and second-hand collectible marketplace.
+Your goal is to evaluate whether the uploaded image clearly and plausibly represents the product being listed.${contextInfo}
 
-Evaluate against these strict criteria:
-1. Visual clarity & readability: The product must be clearly visible, in focus, not excessively dark, blurry, corrupted, or unreadable.
-2. Genuine physical product depiction: Must depict a plausible physical item (such as furniture, decorative art, ceramics, textiles, jewelry, or collectibles) suitable for catalog listing, rather than pure noise, a blank image, an unrelated screenshot, or invalid content.
-3. Manipulation & AI artifacts: Check for visible signs of digital tampering, heavy synthetic distortion, or bizarre AI structural anomalies.
-4. Watermarks & theft indicators: Check for prominent watermarks, stock photo copyright marks, or stolen listing overlays.
-5. Product consistency: Check whether the photograph reasonably depicts the declared item if product details are provided.
+Evaluation Guidelines:
+1. ACCEPT THE IMAGE (verified: true) IF:
+   - It is a genuine photograph of a physical item, artisan piece, craft, clothing, furniture, collectible, or marketplace product.
+   - It is a screenshot (from a smartphone, tablet, or PC) where the actual product is clearly visible. Do NOT reject screenshots merely because they are screenshots.
+   - It has ordinary cropping, resizing, compression, slight blur, normal lighting variations, or background edits/removal.
+   - It has casual watermarks, timestamps, or phone UI borders. Do NOT treat casual watermarks or background edits as suspicious.
+   - Do NOT reject an image solely because it might be AI-generated or digitally rendered.
+   - Be tolerant and practical for genuine students, independent artisans, and second-hand sellers.
+
+2. REJECT THE IMAGE (verified: false) ONLY IF:
+   - The image is blank, solid black/white/grey, pure noise, or corrupted.
+   - The image is an unrelated screenshot where NO product is visible (e.g. text chats, messaging apps, memes, code editors, system menus, financial spreadsheets).
+   - No identifiable product is visible in the image.
+   - The image is so severely degraded, pitch-dark, or blurry that the item cannot be discerned at all.
+   - The image clearly contradicts the declared product title (e.g. listing says "Antique Teak Chair" but the image shows a car or a pizza).
+   - The image exhibits obvious deceptive manipulation or scam content.
 
 IMPORTANT:
-- Normal studio background removal, clean lighting, and catalog staging are completely acceptable.
-- Treat this as an AI visual assessment, NOT absolute proof of physical authenticity. Do not claim that the model can conclusively prove authenticity or identify every AI-generated image.
+- This is a visual clarity and plausibility check, NOT absolute proof of physical authenticity. Do not claim that analysis can conclusively prove physical existence.
+- When in doubt for a genuine listing, accept the image.
 
-Respond STRICTLY with a valid JSON object in this format (no markdown fences, just JSON):
+Respond STRICTLY with a valid JSON object in this format (no markdown, no backticks, just raw JSON):
 {
   "verified": true,
   "readable": true,
@@ -205,13 +215,13 @@ function sanitizeDecision(raw) {
     verified,
     status: raw.status || (verified ? 'verified' : 'rejected'),
     readable: raw.readable !== false,
-    clearProduct: raw.clearProduct !== false,
+    clearProduct: raw.clearProduct !== false && raw.productVisible !== false,
     suspiciousArtifacts: Boolean(raw.suspiciousArtifacts),
     watermarks: Boolean(raw.watermarks),
     confidence: raw.confidence || 'high',
     findings: Array.isArray(raw.findings) ? raw.findings : [],
     suspiciousSigns: Array.isArray(raw.suspiciousSigns) ? raw.suspiciousSigns : [],
-    reason: raw.reason || raw.explanation || (verified ? 'Product image meets listing quality criteria.' : 'Image does not meet quality requirements.')
+    reason: raw.reason || raw.explanation || (verified ? 'Product is clearly depicted and suitable for listing.' : 'Image does not clearly depict a suitable product for listing.')
   };
 }
 
@@ -471,4 +481,24 @@ export function invalidateImageVerification(imageInput) {
  */
 export function clearVerificationRegistry() {
   verifiedImagesRegistry.clear();
+}
+
+/**
+ * Register an image as verified (used for testing without outbound API calls)
+ */
+export function registerVerifiedImageForTesting(imageInput) {
+  try {
+    const imageHash = computeImageHash(imageInput);
+    const token = 'vtok-test-' + Date.now().toString(36);
+    verifiedImagesRegistry.set(imageHash, {
+      token,
+      verified: true,
+      timestamp: Date.now(),
+      reason: 'Verified for testing',
+      confidence: 1.0
+    });
+    return token;
+  } catch (e) {
+    return null;
+  }
 }

@@ -14,11 +14,11 @@ import {
 import { useProducts } from '../context/ProductsContext';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
-import { formatINR } from '../data/products';
+import { formatINR, hasValidImage } from '../data/products';
 
 export const Shop = () => {
   const { products, categories } = useProducts();
-  const { addToCart } = useCart();
+  const { addToCart, orders } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -71,9 +71,38 @@ export const Shop = () => {
     setSearchParams({});
   };
 
+  const soldProductIds = useMemo(() => {
+    const ids = new Set();
+    if (Array.isArray(orders)) {
+      orders.forEach((o) => {
+        if (Array.isArray(o.items)) {
+          o.items.forEach((item) => {
+            if (item?.id) ids.add(item.id);
+          });
+        }
+      });
+    }
+    return ids;
+  }, [orders]);
+
   // Filtered & sorted products list (independent of live auctions)
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => !p.isAuction && p.type !== 'auction' && (!p.listingStatus || p.listingStatus === 'active')); // Dedicated shop marketplace items
+    let result = products.filter((p) => {
+      // Exclude auctions from shop marketplace
+      if (p.isAuction || p.type === 'auction') return false;
+      // Must be active listing status
+      if (p.listingStatus && p.listingStatus !== 'active') return false;
+      // Sold products must disappear from active marketplace listings
+      if (p.isSold === true || p.status === 'sold' || p.listingStatus === 'sold' || p.inStock === false) return false;
+      if (soldProductIds.has(p.id)) return false;
+      // No image-less products in public marketplace
+      if (!hasValidImage(p)) return false;
+      // Maximum 2 demo products allowed across the catalog
+      if (['prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9', 'prod-10', 'prod-11', 'prod-12', 'prod-auc-1', 'prod-auc-2', 'prod-auc-3', 'prod-auc-4', 'prod-up-1', 'prod-up-2', 'prod-up-3', 'prod-up-4'].includes(p.id)) {
+        return false;
+      }
+      return true;
+    });
 
     // Category filter
     if (activeCategory !== 'all') {
@@ -129,7 +158,7 @@ export const Shop = () => {
     }
 
     return result;
-  }, [products, categories, activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy]);
+  }, [products, categories, activeCategory, searchTerm, priceRange, conditionFilter, inStockOnly, sortBy, soldProductIds]);
 
   return (
     <div style={{ paddingTop: '36px', paddingBottom: '96px', backgroundColor: 'var(--bg-primary)' }}>

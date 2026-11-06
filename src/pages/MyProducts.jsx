@@ -209,29 +209,81 @@ export const MyProducts = () => {
 
   // Derive authoritative listing status for each product owned by the current user
   const myProducts = useMemo(() => {
+    if (!user) return [];
     const ownedProducts = customProducts.filter((p) => p.sellerId === user.id);
     const ownedAuctions = customAuctions.filter((a) => a.sellerId === user.id);
 
-    // Merge auctions that might not be in customProducts yet
-    const productIds = new Set(ownedProducts.map((p) => p.id));
-    const merged = [...ownedProducts];
+    // Track seen identifiers to guarantee each submitted product appears only ONCE
+    const seenItemKeys = new Set();
+    const seenAuctionIds = new Set();
+    const seenSubmissionIds = new Set();
+    const uniqueItems = [];
 
+    const isDuplicateItem = (item) => {
+      // 1. Direct ID check
+      if (item.id && seenItemKeys.has(item.id)) return true;
+      if (item.auctionId && seenAuctionIds.has(item.auctionId)) return true;
+      if (item.productId && seenItemKeys.has(item.productId)) return true;
+
+      // 2. Client submission idempotency ID check
+      if (item.clientSubmissionId && seenSubmissionIds.has(item.clientSubmissionId)) {
+        return true;
+      }
+
+      // 3. Rapid accidental double-click / burst submission check:
+      // Same seller, same name, same price, same image submitted within 15 seconds of each other
+      const itemTime = item.submittedAt || item.listedAt ? new Date(item.submittedAt || item.listedAt).getTime() : 0;
+      const isBurstDuplicate = uniqueItems.some((existing) => {
+        if (
+          existing.name?.trim().toLowerCase() === item.name?.trim().toLowerCase() &&
+          Number(existing.price || existing.estimatedValue) === Number(item.price || item.estimatedValue)
+        ) {
+          const exTime = existing.submittedAt || existing.listedAt ? new Date(existing.submittedAt || existing.listedAt).getTime() : 0;
+          if (itemTime && exTime && Math.abs(itemTime - exTime) < 15000) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (isBurstDuplicate) return true;
+
+      return false;
+    };
+
+    const registerUniqueItem = (item) => {
+      if (item.id) seenItemKeys.add(item.id);
+      if (item.auctionId) seenAuctionIds.add(item.auctionId);
+      if (item.productId) seenItemKeys.add(item.productId);
+      if (item.clientSubmissionId) seenSubmissionIds.add(item.clientSubmissionId);
+      uniqueItems.push(item);
+    };
+
+    // First process products
+    ownedProducts.forEach((prod) => {
+      if (!isDuplicateItem(prod)) {
+        registerUniqueItem(prod);
+      }
+    });
+
+    // Then process any auctions that might not be in customProducts yet
     ownedAuctions.forEach((auc) => {
-      if (!productIds.has(auc.productId) && !productIds.has(auc.id)) {
-        merged.push({
-          ...auc,
-          id: auc.productId || auc.id,
-          price: auc.estimatedValue || auc.startingBid,
-          listingStatus: auc.approvalStatus,
-          isAuction: true,
-          type: 'auction'
-        });
+      const aucProduct = {
+        ...auc,
+        id: auc.productId || auc.id,
+        auctionId: auc.id,
+        price: auc.estimatedValue || auc.startingBid,
+        listingStatus: auc.approvalStatus,
+        isAuction: true,
+        type: 'auction'
+      };
+      if (!isDuplicateItem(aucProduct)) {
+        registerUniqueItem(aucProduct);
       }
     });
 
     const now = Date.now();
 
-    return merged.map((product) => {
+    return uniqueItems.map((product) => {
       const isAuction = product.isAuction || product.type === 'auction';
 
       if (isAuction) {
@@ -277,7 +329,7 @@ export const MyProducts = () => {
       const stored = product.listingStatus || 'pending';
       return { ...product, derivedStatus: stored };
     });
-  }, [customProducts, customAuctions, liveAuctions, user.id, orders]);
+  }, [customProducts, customAuctions, liveAuctions, user, orders]);
 
   // Status counts for filter tabs
   const counts = useMemo(() => {
@@ -778,8 +830,9 @@ const ProductRow = ({
     matchedAuction && currentUser ? getMeetingAccess(matchedAuction, currentUser) : { canAccessMeeting: false };
 
   const handleApprove = async () => {
+    const targetAuctionId = product.auctionId || (matchedAuction && matchedAuction.id) || product.id;
     if (isAuction) {
-      const outcome = await approveAuctionLot(product.id);
+      const outcome = await approveAuctionLot(targetAuctionId);
       if (outcome && outcome.requiresReschedule) {
         onRequireReschedule(matchedAuction || product);
       } else {
@@ -791,8 +844,9 @@ const ProductRow = ({
   };
 
   const handleReject = () => {
+    const targetAuctionId = product.auctionId || (matchedAuction && matchedAuction.id) || product.id;
     if (isAuction) {
-      rejectAuctionLot(product.id);
+      rejectAuctionLot(targetAuctionId);
     }
     updateProductStatus(product.id, 'rejected');
   };
