@@ -83,13 +83,13 @@ export const ProductsProvider = ({ children }) => {
     };
   }, []);
 
-  // 2. Synchronize with local server database & subscribe to Socket.IO real-time events
-  useEffect(() => {
-    let isMounted = true;
-    fetch('/api/products')
-      .then((res) => res.json())
-      .then((data) => {
-        if (isMounted && data.success && Array.isArray(data.products)) {
+  // Synchronize custom products catalog from server
+  const syncProductsWithServer = useCallback(async () => {
+    try {
+      const res = await fetch('/api/products');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products)) {
           const customFromServer = data.products.filter((p) => p.id && String(p.id).startsWith('prod-'));
           if (customFromServer.length > 0) {
             setCustomProducts((prev) => {
@@ -104,11 +104,21 @@ export const ProductsProvider = ({ children }) => {
             });
           }
         }
-      })
-      .catch(() => {});
+      }
+    } catch (err) {}
+  }, []);
+
+  // 2. Synchronize with local server database & subscribe to Socket.IO real-time events
+  useEffect(() => {
+    let isMounted = true;
+    syncProductsWithServer();
 
     const socket = getSocket();
     if (socket) {
+      const handleConnect = () => {
+        if (isMounted) syncProductsWithServer();
+      };
+
       const handleProductCreated = (payload) => {
         if (payload?.product && isMounted) {
           setCustomProducts((prev) => {
@@ -140,6 +150,7 @@ export const ProductsProvider = ({ children }) => {
         }
       };
 
+      socket.on('connect', handleConnect);
       socket.on('PRODUCT_CREATED', handleProductCreated);
       socket.on('PRODUCT_DELETED', handleProductDeleted);
       socket.on('PRODUCT_APPROVED', handleProductApproved);
@@ -147,6 +158,7 @@ export const ProductsProvider = ({ children }) => {
 
       return () => {
         isMounted = false;
+        socket.off('connect', handleConnect);
         socket.off('PRODUCT_CREATED', handleProductCreated);
         socket.off('PRODUCT_DELETED', handleProductDeleted);
         socket.off('PRODUCT_APPROVED', handleProductApproved);
@@ -157,7 +169,7 @@ export const ProductsProvider = ({ children }) => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [syncProductsWithServer]);
 
   // Base catalog: Prefer Supabase products if loaded, fallback to PRODUCTS sample catalog
   const allProducts = useMemo(() => {

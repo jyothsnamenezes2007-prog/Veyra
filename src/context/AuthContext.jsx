@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from './ToastContext';
+import { updateSocketAuthToken } from '../lib/socket';
 
 const AuthContext = createContext(null);
 const DEMO_USER_STORAGE_KEY = 'veyra_active_user';
@@ -128,6 +129,7 @@ export const AuthProvider = ({ children }) => {
       } = supabase.auth.onAuthStateChange((event, currentSession) => {
         if (!mounted) return;
         setSession(currentSession);
+        updateSocketAuthToken(currentSession?.access_token || null);
         if (event === 'PASSWORD_RECOVERY') {
           setIsPasswordRecovery(true);
         }
@@ -569,6 +571,7 @@ export const AuthProvider = ({ children }) => {
     }
     setUser(null);
     setSession(null);
+    updateSocketAuthToken(null);
     localStorage.removeItem(DEMO_USER_STORAGE_KEY);
     addToast('Signed out successfully.');
     return { success: true };

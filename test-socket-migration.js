@@ -12,15 +12,18 @@
  */
 
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { io as Client } from 'socket.io-client';
 import { initSocketServer, getActiveSocketCount, broadcastEvent, sendUserEvent } from './server/socket.js';
 import { handleApiRequest } from './server/api.js';
-import { initDatabase, getAuctions, getAuctionById, updateAuction } from './server/db.js';
 
 let server;
 let serverPort;
 let clientA;
 let clientB;
+let tempDbPath;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -31,6 +34,16 @@ async function runTests() {
   console.log('--- STARTING VEYRA SOCKET.IO REAL-TIME MIGRATION VERIFICATION ---');
   console.log('================================================================\n');
 
+  const originalDbPath = path.resolve('server/data/db.json');
+  tempDbPath = path.join(os.tmpdir(), `veyra-socket-test-db-${Date.now()}.json`);
+  fs.copyFileSync(originalDbPath, tempDbPath);
+  const tempDbData = JSON.parse(fs.readFileSync(tempDbPath, 'utf8'));
+  tempDbData.proxyConfigs = [];
+  fs.writeFileSync(tempDbPath, JSON.stringify(tempDbData, null, 2), 'utf8');
+  process.env.VEYRA_DB_PATH = tempDbPath;
+
+  const { initDatabase, resetDbCache, getAuctions, getAuctionById, updateAuction } = await import('./server/db.js');
+  resetDbCache();
   initDatabase();
 
   // 1. Setup test HTTP server with Socket.IO
@@ -150,34 +163,34 @@ async function runTests() {
     console.log('✓ Test 3 Passed: BID_PLACED event delivered in real-time to all listening clients.');
 
     // -------------------------------------------------------------
-    // Test 4: Auto-bidding / Proxy events & Budget Privacy
+    // Test 4: Auto-bidding / Proxy events: Fail-closed privacy protection
     // -------------------------------------------------------------
-    console.log('\n[Test 4] Testing Auto-bidding events and ensuring private maximum budget is NOT exposed...');
+    console.log('\n[Test 4] Testing Auto-bidding events fail-closed handling and budget privacy...');
     const clientAProxyEvents = [];
     const clientBProxyEvents = [];
 
     clientA.on('PROXY_BID_PLACED', (p) => clientAProxyEvents.push(p));
     clientB.on('PROXY_BID_PLACED', (p) => clientBProxyEvents.push(p));
 
-    const proxyEventPayload = {
+    // A private proxy event with no owner MUST be dropped and never broadcast publicly
+    const unownedProxyPayload = {
       auctionId: 'auc-1',
       bid: { id: 'pb-bid-1', amount: 155000, isProxy: true },
       currentBid: 155000,
       bidCount: 6,
       remainingSeconds: 1150
-      // Notice: maxBid is strictly excluded
     };
 
-    broadcastEvent('PROXY_BID_PLACED', proxyEventPayload, 'auc-1');
+    const droppedResult = broadcastEvent('PROXY_BID_PLACED', unownedProxyPayload, 'auc-1');
     await sleep(150);
 
-    if (clientAProxyEvents.length !== 1 || clientBProxyEvents.length !== 1) {
-      throw new Error('Failed to deliver PROXY_BID_PLACED event to clients.');
+    if (droppedResult !== false) {
+      throw new Error('SECURITY VIOLATION: broadcastEvent did not return false for unowned private proxy event!');
     }
-    if (clientBProxyEvents[0].maxBid !== undefined) {
-      throw new Error('SECURITY VIOLATION: Private proxy max budget was exposed in event payload!');
+    if (clientAProxyEvents.length !== 0 || clientBProxyEvents.length !== 0) {
+      throw new Error('SECURITY VIOLATION: Unowned private proxy event was broadcast to public clients!');
     }
-    console.log('✓ Test 4 Passed: Auto-bidding events broadcast correctly with private budget securely protected.');
+    console.log('✓ Test 4 Passed: Unowned private proxy event safely dropped without public broadcast.');
 
     // -------------------------------------------------------------
     // Test 5: Live Auction Comments (Single delivery & deduplication)
@@ -268,8 +281,17 @@ async function runTests() {
     if (clientA) clientA.close();
     if (clientB) clientB.close();
     if (server) {
-      await new Promise((resolve) => server.close(resolve));
+      try {
+        server.closeAllConnections?.();
+        server.close();
+      } catch (e) {}
     }
+    if (tempDbPath && fs.existsSync(tempDbPath)) {
+      try {
+        fs.unlinkSync(tempDbPath);
+      } catch (e) {}
+    }
+    delete process.env.VEYRA_DB_PATH;
   }
 }
 
@@ -278,5 +300,10 @@ runTests().catch((err) => {
   if (clientA) clientA.close();
   if (clientB) clientB.close();
   if (server) server.close();
+  if (tempDbPath && fs.existsSync(tempDbPath)) {
+    try {
+      fs.unlinkSync(tempDbPath);
+    } catch (e) {}
+  }
   process.exit(1);
 });

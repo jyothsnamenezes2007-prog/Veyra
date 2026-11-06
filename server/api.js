@@ -24,9 +24,7 @@ import {
   isImageAuthorized,
   invalidateImageVerification
 } from './imageVerification.js';
-
-// Connected SSE clients
-const sseClients = new Set();
+import { broadcastEvent, sendUserEvent, getActiveSocketCount } from './socket.js';
 
 // In-memory mutex locks for bidding to prevent race conditions
 const auctionLocks = new Map();
@@ -50,21 +48,28 @@ async function withAuctionLock(auctionId, fn) {
   }
 }
 
-// Broadcast SSE event to all connected clients
-export function broadcastSSE(type, payload) {
-  const message = `event: message\ndata: ${JSON.stringify({ type, payload, serverTime: Date.now() })}\n\n`;
-  for (const client of sseClients) {
-    try {
-      client.res.write(message);
-    } catch (err) {
-      sseClients.delete(client);
-    }
+// Broadcast real-time event to all connected Socket.IO clients
+export function broadcastRealtimeEvent(type, payload = {}, auctionId = null) {
+  // Isolate private proxy-bidding events exclusively to their authenticated owner
+  const isPrivateProxyEvent =
+    type === 'PROXY_CONFIG_UPDATED' ||
+    type === 'PROXY_BID_LIMIT_EXCEEDED' ||
+    type === 'PROXY_BID_PLACED';
+
+  if (isPrivateProxyEvent) {
+    return broadcastEvent(type, payload, auctionId);
   }
+
+  const targetAuctionId = auctionId || payload.auctionId || payload.auction?.id || null;
+  return broadcastEvent(type, payload, targetAuctionId);
 }
 
-// Hook scheduler events to SSE broadcast
+// Backward-compatible alias for existing callers
+export const broadcastSSE = broadcastRealtimeEvent;
+
+// Hook scheduler events to Socket.IO real-time broadcast
 scheduler.on('event', ({ type, payload }) => {
-  broadcastSSE(type, payload);
+  broadcastRealtimeEvent(type, payload, payload?.auction?.id);
 });
 
 // Helper to parse JSON body from incoming Node request
@@ -107,31 +112,23 @@ export async function handleApiRequest(req, res) {
   const pathname = url.pathname;
   const method = req.method.toUpperCase();
 
-  // 1. SSE Events endpoint
-  if (pathname === '/api/events' && method === 'GET') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-    res.write(`data: ${JSON.stringify({ type: 'CONNECTED', serverTime: Date.now() })}\n\n`);
-
-    const client = { req, res };
-    sseClients.add(client);
-
-    req.on('close', () => {
-      sseClients.delete(client);
+  // 1. Retired SSE Events endpoint (migrated to Socket.IO)
+  if (pathname === '/api/events') {
+    sendJson(res, 410, {
+      error: 'SSE has been retired. Real-time updates are powered by Socket.IO.'
     });
     return true;
   }
 
   // 2. Health & Server Time
   if (pathname === '/api/health' && method === 'GET') {
+    const activeSockets = getActiveSocketCount();
     sendJson(res, 200, {
       status: 'ok',
       serverTime: Date.now(),
       schedulerRunning: scheduler.isRunning,
-      activeClients: sseClients.size
+      activeSockets: activeSockets,
+      activeClients: activeSockets
     });
     return true;
   }

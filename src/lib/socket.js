@@ -9,6 +9,7 @@
  */
 
 import { io } from 'socket.io-client';
+import { supabase } from './supabase';
 
 let socketInstance = null;
 
@@ -18,8 +19,10 @@ let socketInstance = null;
  */
 export function getSocket() {
   if (!socketInstance && typeof window !== 'undefined') {
-    // In browser, window.location.origin connects to dev server or backend
-    const socketUrl = window.location.origin;
+    // Connects to configured VITE_SOCKET_URL or defaults to current host origin
+    const socketUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL)
+      ? import.meta.env.VITE_SOCKET_URL
+      : window.location.origin;
 
     socketInstance = io(socketUrl, {
       autoConnect: true,
@@ -28,7 +31,20 @@ export function getSocket() {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      auth: (cb) => {
+        if (supabase) {
+          supabase.auth.getSession()
+            .then(({ data }) => {
+              cb({ token: data?.session?.access_token || null });
+            })
+            .catch(() => {
+              cb({ token: null });
+            });
+        } else {
+          cb({ token: null });
+        }
+      }
     });
 
     socketInstance.on('connect', () => {
@@ -42,9 +58,30 @@ export function getSocket() {
     socketInstance.on('connect_error', (error) => {
       console.warn('[Socket.IO] Connection warning:', error.message);
     });
+
+    socketInstance.on('AUTH_SUCCESS', (info) => {
+      console.log('[Socket.IO] Authenticated user session established:', info.userId);
+    });
+
+    socketInstance.on('AUTH_ERROR', (error) => {
+      console.warn('[Socket.IO] Private room authorization notice:', error.error);
+    });
   }
 
   return socketInstance;
+}
+
+/**
+ * Synchronize socket credentials when user logs in, logs out, or token refreshes.
+ * Disconnects and reconnects the socket to renegotiate private channels.
+ * @param {string|null} token
+ */
+export function updateSocketAuthToken(token) {
+  if (!socketInstance) return;
+  socketInstance.auth = { token: token || null };
+  if (socketInstance.connected) {
+    socketInstance.disconnect().connect();
+  }
 }
 
 /**
