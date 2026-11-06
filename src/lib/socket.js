@@ -12,6 +12,7 @@ import { io } from 'socket.io-client';
 import { supabase } from './supabase';
 
 let socketInstance = null;
+const activeAuctionRooms = new Set();
 
 /**
  * Returns the singleton Socket.IO client instance.
@@ -49,6 +50,10 @@ export function getSocket() {
 
     socketInstance.on('connect', () => {
       console.log('[Socket.IO] Connected to Veyra real-time server:', socketInstance.id);
+      // Restore active auction room subscriptions across initial connection & re-connections
+      activeAuctionRooms.forEach((room) => {
+        socketInstance.emit('join_auction', room);
+      });
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -86,32 +91,35 @@ export function updateSocketAuthToken(token) {
 
 /**
  * Join an auction-specific room on the server to receive targeted updates.
+ * Tracks active rooms to seamlessly restore membership across reconnections
+ * and prevents duplicate event emissions if already in the room.
  * @param {string} auctionId
  */
 export function joinAuctionRoom(auctionId) {
   if (!auctionId || typeof auctionId !== 'string') return;
-  const socket = getSocket();
-  if (!socket) return;
-
   const room = auctionId.trim();
-  if (socket.connected) {
+  if (!room) return;
+  if (activeAuctionRooms.has(room)) return;
+
+  activeAuctionRooms.add(room);
+  const socket = getSocket();
+  if (socket && socket.connected) {
     socket.emit('join_auction', room);
-  } else {
-    socket.once('connect', () => {
-      socket.emit('join_auction', room);
-    });
   }
 }
 
 /**
  * Leave an auction-specific room when leaving the auction floor.
+ * Cleans up active room tracking so it is not re-joined on reconnect.
  * @param {string} auctionId
  */
 export function leaveAuctionRoom(auctionId) {
   if (!auctionId || typeof auctionId !== 'string') return;
+  const room = auctionId.trim();
+  activeAuctionRooms.delete(room);
   const socket = getSocket();
   if (socket && socket.connected) {
-    socket.emit('leave_auction', auctionId.trim());
+    socket.emit('leave_auction', room);
   }
 }
 
