@@ -222,22 +222,31 @@ export const Sell = () => {
         })
       });
 
-      const data = await res.json().catch(() => ({}));
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = null;
+      }
 
-      if (res.ok && data.verified && data.token) {
+      if (res.ok && data && data.verified === true && data.token) {
         setVerificationStatus('verified');
         setVerificationMessage('Image Verified — You can proceed.');
         setVerificationReason(data.reason || '');
         setVerificationToken(data.token);
         setVerifiedImageSrc(targetImage);
-      } else if (res.status === 503 || data.unavailable) {
-        setVerificationStatus('unavailable');
-        setVerificationMessage('Verification is temporarily unavailable. Please try again.');
-        setVerificationReason(data.error || 'The image verification service could not be reached.');
-      } else {
+      } else if (res.ok && data && data.verified === false) {
         setVerificationStatus('failed');
         setVerificationMessage('Image verification failed. Please upload a clearer, genuine product photo.');
         setVerificationReason(data.reason || data.error || 'The image does not meet quality requirements.');
+      } else if (res.status === 400 && data && !data.unavailable) {
+        setVerificationStatus('failed');
+        setVerificationMessage(data.error || 'Invalid image format or size.');
+        setVerificationReason(data.reason || data.error || 'Please upload a valid JPEG, PNG, or WEBP under 5MB.');
+      } else {
+        setVerificationStatus('unavailable');
+        setVerificationMessage('Verification is temporarily unavailable. Please try again.');
+        setVerificationReason((data && data.error) || 'The image verification service could not be reached.');
       }
     } catch (err) {
       setVerificationStatus('unavailable');

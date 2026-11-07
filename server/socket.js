@@ -53,6 +53,14 @@ export function isAllowedOrigin(origin) {
   const normalized = origin.trim().replace(/\/$/, '');
   if (TRUSTED_ORIGINS.has(normalized)) return true;
 
+  // Dynamically permit any Render deployment hostname (.onrender.com)
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname.endsWith('.onrender.com')) {
+      return true;
+    }
+  } catch (e) {}
+
   const envOrigins = [
     process.env.CLIENT_URL,
     process.env.FRONTEND_URL,

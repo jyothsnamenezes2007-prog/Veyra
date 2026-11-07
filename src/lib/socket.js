@@ -15,15 +15,38 @@ let socketInstance = null;
 const activeAuctionRooms = new Set();
 
 /**
+ * Resolves the Socket.IO server URL.
+ * Automatically defaults to window.location.origin (unified server),
+ * and safely ignores stale/decommissioned backend URLs (e.g. veyra-backend-flqq).
+ */
+export function getSocketUrl() {
+  if (typeof window === 'undefined') return '';
+
+  const configured = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL)
+    ? String(import.meta.env.VITE_SOCKET_URL).trim()
+    : '';
+
+  // Disregard decommissioned or dead Render services (e.g. veyra-backend-flqq)
+  if (configured && (configured.includes('veyra-backend-flqq') || configured.includes('flqq'))) {
+    console.warn('[Socket.IO] Ignoring obsolete backend URL (' + configured + '). Connecting to current host origin.');
+    return window.location.origin;
+  }
+
+  if (configured) {
+    return configured;
+  }
+
+  return window.location.origin;
+}
+
+/**
  * Returns the singleton Socket.IO client instance.
  * Automatically connects to the current host origin.
  */
 export function getSocket() {
   if (!socketInstance && typeof window !== 'undefined') {
     // Connects to configured VITE_SOCKET_URL or defaults to current host origin
-    const socketUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SOCKET_URL)
-      ? import.meta.env.VITE_SOCKET_URL
-      : window.location.origin;
+    const socketUrl = getSocketUrl();
 
     socketInstance = io(socketUrl, {
       autoConnect: true,
