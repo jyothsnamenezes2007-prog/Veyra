@@ -49,7 +49,13 @@ function loadEnvFileIfNeeded() {
  */
 export function getGroqConfig() {
   loadEnvFileIfNeeded();
-  const rawKey = (process.env.GROQ_API_KEY || '').trim();
+  const rawKey = (
+    process.env.GROQ_API_KEY ||
+    process.env.GROQ_VISION_API_KEY ||
+    process.env.GROQ_KEY ||
+    process.env.VITE_GROQ_API_KEY ||
+    ''
+  ).trim();
   const isPlaceholderKey = !rawKey || rawKey === 'your_groq_api_key_here';
 
   // Base URL & Endpoint
@@ -59,7 +65,12 @@ export function getGroqConfig() {
 
   // Vision-capable model confirmed by Groq documentation:
   // qwen/qwen3.8-27b (or llama-3.2-11b-vision-preview / llama-3.2-90b-vision-preview)
-  const modelEnv = (process.env.GROQ_VISION_MODEL || '').trim();
+  const modelEnv = (
+    process.env.GROQ_VISION_MODEL ||
+    process.env.GROQ_MODEL ||
+    process.env.VISION_MODEL ||
+    ''
+  ).trim();
   const model = (!modelEnv || modelEnv === 'your_groq_vision_model_id') ? 'qwen/qwen3.8-27b' : modelEnv;
 
   return {
@@ -85,14 +96,16 @@ export function parseImageInput(imageInput) {
   const trimmed = imageInput.trim();
 
   // Handle data URL: data:image/png;base64,....
-  const dataUrlMatch = trimmed.match(/^data:([^;]+);base64,(.+)$/);
+  const dataUrlMatch = trimmed.match(/^data:([^;]+);base64,([\s\S]+)$/i);
   if (dataUrlMatch) {
-    const mimeType = dataUrlMatch[1].toLowerCase();
-    const base64Data = dataUrlMatch[2];
-    const buffer = Buffer.from(base64Data, 'base64');
+    const rawMime = dataUrlMatch[1].toLowerCase().trim();
+    // Normalize image/jpg to image/jpeg for strict API compatibility
+    const mimeType = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
+    const cleanBase64 = dataUrlMatch[2].replace(/\s+/g, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
 
-    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      throw new Error(`Unsupported image format: ${mimeType}. Please upload PNG, JPG, or WEBP.`);
+    if (!ALLOWED_MIME_TYPES.has(rawMime) && !ALLOWED_MIME_TYPES.has(mimeType)) {
+      throw new Error(`Unsupported image format: ${rawMime}. Please upload PNG, JPG, or WEBP.`);
     }
 
     if (buffer.length > MAX_FILE_SIZE_BYTES) {
@@ -103,7 +116,7 @@ export function parseImageInput(imageInput) {
       type: 'data_url',
       mimeType,
       buffer,
-      dataUrl: trimmed
+      dataUrl: `data:${mimeType};base64,${cleanBase64}`
     };
   }
 
@@ -150,6 +163,7 @@ Evaluation Guidelines:
    - It has ordinary cropping, resizing, compression, slight blur, normal lighting variations, or background edits/removal.
    - It has casual watermarks, timestamps, or phone UI borders. Do NOT treat casual watermarks or background edits as suspicious.
    - Do NOT reject an image solely because it might be AI-generated or digitally rendered.
+   - Category tolerance: Marketplace sellers may select broad or approximate categories (e.g. musical instruments, hobby gear, or lifestyle goods under 'Fashion & Accessories' or 'Collectibles'). Do NOT reject an image solely due to category classification if the depicted item plausibly matches the title.
    - Be tolerant and practical for genuine students, independent artisans, and second-hand sellers.
 
 2. REJECT THE IMAGE (verified: false) ONLY IF:
